@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{% block title %}Pedidos Granodoc - Gestão de Suprimentos{% endblock %}</title>
+    
+    <!-- Google Fonts: Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                    },
+                    colors: {
+                        granodoc: {
+                            50: '#fff1f2',
+                            100: '#ffe4e6',
+                            200: '#fecdd3',
+                            500: '#f43f5e',
+                            600: '#e11d48',
+                            700: '#be123c',
+                            800: '#9f1239',
+                            900: '#881337',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Lucide Icons (Local) -->
+    <script src="/static/js/lucide.min.js"></script>
+
+    <!-- Alpine.js (Local) -->
+    <script defer src="/static/js/alpine.min.js"></script>
+
+    <!-- Custom CSS & Theme Init -->
+    <link rel="stylesheet" href="/static/css/custom.css">
+    <script src="/static/js/app.js"></script>
+
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="h-full bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans antialiased selection:bg-granodoc-500 selection:text-white">
+
+    <!-- FAIXA DE MODO AUDITORIA (Exibida se o admin estiver inspecionando uma praça) -->
+    {% if current_user and current_user.audit_mode_active %}
+    <div class="bg-amber-500 text-slate-950 font-bold px-4 py-2.5 text-center text-sm shadow-md flex items-center justify-between no-print sticky top-0 z-50">
+        <div class="flex items-center gap-2 mx-auto">
+            <i data-lucide="eye" class="w-4 h-4"></i>
+            <span>MODO AUDITORIA: Inspecionando a interface como <strong>{{ current_user.audit_sector }}</strong></span>
+        </div>
+        <a href="/api/audit/exit" class="bg-slate-900 text-white hover:bg-slate-800 px-3 py-1 rounded-lg text-xs font-semibold transition touch-btn flex items-center gap-1 shadow">
+            <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+            <span>Voltar ao Painel Master</span>
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- CABEÇALHO GLOBAL -->
+    <header class="bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            
+            <!-- Logo & Identidade -->
+            <div class="flex items-center gap-3">
+                <a href="/" class="flex items-center gap-2.5 group">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-granodoc-600 to-amber-500 flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
+                        <i data-lucide="utensils" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <span class="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-1.5">
+                            Granodoc <span class="text-xs uppercase px-2 py-0.5 rounded-full bg-granodoc-100 dark:bg-granodoc-900/40 text-granodoc-700 dark:text-granodoc-300 font-bold tracking-wider">Suprimentos</span>
+                        </span>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Gestão de Requisições & Compras</p>
+                    </div>
+                </a>
+            </div>
+
+            <!-- Setor Ativo & Controles -->
+            <div class="flex items-center gap-2 sm:gap-3">
+                
+                {% if current_user %}
+                <!-- Tag do Setor Logado -->
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 shadow-sm">
+                    <div class="w-2.5 h-2.5 rounded-full {% if current_user.nivel_acesso == 'admin' %}bg-sky-500 ring-4 ring-sky-500/20{% else %}bg-emerald-500 ring-4 ring-emerald-500/20{% endif %}"></div>
+                    <span class="text-xs font-bold text-slate-700 dark:text-slate-200 tracking-wide uppercase">
+                        {{ current_user.nome_setor }}
+                    </span>
+                    {% if current_user.nivel_acesso == 'admin' %}
+                    <span class="hidden sm:inline text-[10px] bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300 px-1.5 py-0.5 rounded font-extrabold uppercase">Master</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- Botão Alternador de Tema (Light/Dark) -->
+                <button onclick="toggleTheme()" type="button" title="Alternar Modo Escuro/Claro" class="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition touch-btn border border-slate-200 dark:border-slate-700/60">
+                    <i data-lucide="moon" class="w-4 h-4 hidden dark:block"></i>
+                    <i data-lucide="sun" class="w-4 h-4 block dark:hidden"></i>
+                </button>
+
+                {% if current_user %}
+                <!-- Botão Trocar Setor / Logout -->
+                <a href="/logout" title="Trocar Setor ou Sair" class="h-10 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 flex items-center gap-1.5 text-xs font-bold transition touch-btn border border-rose-200 dark:border-rose-900/50">
+                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Trocar Setor</span>
+                </a>
+                {% endif %}
+
+            </div>
+
+        </div>
+    </header>
+
+    <!-- CONTEÚDO PRINCIPAL -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- RODAPÉ -->
+    <footer class="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-4 text-center text-xs text-slate-500 dark:text-slate-400 no-print">
+        <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <span>&copy; 2026 <strong>Pedidos Granodoc</strong> &bull; Sistema de Gestão Interna de Suprimentos</span>
+            <div class="flex items-center gap-3">
+                <span class="flex items-center gap-1"><i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-500"></i> RBAC Ativo</span>
+                <span>&bull;</span>
+                <span class="flex items-center gap-1"><i data-lucide="smartphone" class="w-3.5 h-3.5 text-sky-500"></i> Mobile-First</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Script para renderizar ícones Lucide sempre que a página carrega -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+        });
+        // Atualiza ícones após Alpine renderizar
+        document.addEventListener('alpine:initialized', () => {
+            setTimeout(() => {
+                if (window.lucide) lucide.createIcons();
+            }, 50);
+        });
+    </script>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

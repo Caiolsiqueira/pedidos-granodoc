@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+
+{% block title %}Acesso por PIN - Pedidos Granodoc{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto py-4 sm:py-8">
+
+    <!-- Card Principal de Autenticação -->
+    <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 transition-all">
+        
+        <div class="text-center mb-6">
+            <div class="inline-flex p-3 rounded-2xl bg-granodoc-50 dark:bg-granodoc-950/50 text-granodoc-600 dark:text-granodoc-400 mb-3 ring-8 ring-granodoc-500/10">
+                <i data-lucide="lock" class="w-8 h-8"></i>
+            </div>
+            <h1 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Identificação de Acesso</h1>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Selecione sua praça e digite seu PIN de 4 dígitos</p>
+        </div>
+
+        <!-- 1. SELEÇÃO DO SETOR / PRAÇA (BOTOES HTML DIRETOS, SEM DEPENDER DE TEMPLATE) -->
+        <div class="mb-6">
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
+                Escolha seu Setor:
+            </label>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5" id="sector-grid">
+                
+                <button 
+                    type="button"
+                    data-sector="Pizza"
+                    data-label="Pizzaiolo"
+                    class="sector-btn p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 transition text-center touch-btn cursor-pointer bg-granodoc-600 text-white border-granodoc-600 shadow-md ring-2 ring-granodoc-500/30"
+                >
+                    <span class="text-2xl">🍕</span>
+                    <span class="text-xs font-bold leading-tight">Pizzaiolo</span>
+                </button>
+
+                <button 
+                    type="button"
+                    data-sector="Cozinha"
+                    data-label="Cozinha"
+                    class="sector-btn p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 transition text-center touch-btn cursor-pointer bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700"
+                >
+                    <span class="text-2xl">🍳</span>
+                    <span class="text-xs font-bold leading-tight">Cozinha</span>
+                </button>
+
+                <button 
+                    type="button"
+                    data-sector="Bar"
+                    data-label="Barman"
+                    class="sector-btn p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 transition text-center touch-btn cursor-pointer bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700"
+                >
+                    <span class="text-2xl">🍸</span>
+                    <span class="text-xs font-bold leading-tight">Barman</span>
+                </button>
+
+                <button 
+                    type="button"
+                    data-sector="Salão"
+                    data-label="Salão"
+                    class="sector-btn p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 transition text-center touch-btn cursor-pointer bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700"
+                >
+                    <span class="text-2xl">🍷</span>
+                    <span class="text-xs font-bold leading-tight">Salão</span>
+                </button>
+
+                <button 
+                    type="button"
+                    data-sector="Administracao"
+                    data-label="Administração"
+                    class="sector-btn col-span-2 sm:col-span-1 p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 transition text-center touch-btn cursor-pointer bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700"
+                >
+                    <span class="text-2xl">🛡️</span>
+                    <span class="text-xs font-bold leading-tight">Administração</span>
+                </button>
+
+            </div>
+        </div>
+
+        <!-- 2. PAINEL DE ENTRADA DO PIN -->
+        <div class="bg-slate-50 dark:bg-slate-950/60 rounded-2xl p-5 border border-slate-200 dark:border-slate-800/80">
+            
+            <div class="text-center mb-4">
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-center gap-1.5">
+                    <span>Acessando como:</span>
+                    <strong id="sector-display" class="text-slate-800 dark:text-slate-200 font-bold text-sm">Pizzaiolo</strong>
+                </div>
+
+                <!-- 4 Círculos Indicadores do PIN (Clicáveis para focar no celular) -->
+                <div id="pin-dots" class="flex items-center justify-center gap-4 my-4 cursor-pointer" title="Clique para digitar ou use o teclado abaixo">
+                    <div id="dot-0" class="pin-dot"></div>
+                    <div id="dot-1" class="pin-dot"></div>
+                    <div id="dot-2" class="pin-dot"></div>
+                    <div id="dot-3" class="pin-dot"></div>
+                </div>
+
+                <!-- Campo invisível para suporte a teclados físicos e de celular -->
+                <input 
+                    type="password" 
+                    id="hidden-pin-input" 
+                    inputmode="numeric" 
+                    pattern="[0-9]*" 
+                    maxlength="4" 
+                    autocomplete="off"
+                    class="sr-only"
+                    aria-label="Digite seu PIN"
+                >
+
+                <!-- Feedback de Erro e Carregamento -->
+                <div id="error-message" class="text-xs text-rose-500 font-bold min-h-[1.25rem] hidden"></div>
+                <div id="loading-spinner" class="text-xs text-sky-500 font-bold flex items-center justify-center gap-1.5 min-h-[1.25rem] hidden">
+                    <svg class="animate-spin h-3.5 w-3.5 text-sky-500" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                    </svg>
+                    <span>Verificando credenciais...</span>
+                </div>
+            </div>
+
+            <!-- 3. TECLADO VIRTUAL NUMÉRICO FÍSICO EM HTML (100% GARANTIDO NA TELA) -->
+            <div class="grid grid-cols-3 gap-2.5 max-w-[290px] mx-auto" id="numeric-keypad">
+                <!-- Linha 1 -->
+                <button type="button" data-key="1" class="key-btn h-14 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-600 text-slate-800 dark:text-slate-100 text-xl font-black shadow-sm border border-slate-200 dark:border-slate-700/80 flex items-center justify-center touch-btn">1</button>
+                <button type="button" data-key="2" class="key-btn h-14 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-600 text-slate-800 dark:text-slate-100 text-xl font-black shadow-sm border border-slate-200 dark:border-slate-700/80 flex items-center justify-center touch-btn">2</button>
+                <button type="button" data-key="3" class="key-btn h-14 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-600 text-slate-800 dark:text-slate-100 text-xl font-black shadow-sm border border-slate-200 dark:border-slate-700/80 flex items-center justify-center touch-btn">3</button>
+
+                <!-- Linha 2 -->
+                <button type="button" data-key="4" class="key-btn h-14 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-600 text-slate-800 dark:text-slate-100 text-xl font-black shadow-sm border border-slate-200 dark:border-slate-700/80 flex items-center justify-center touch-btn">4</button>
+                <button type="button" data-key="5" class="key-btn h-14 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-600 text-slate-800 dark:text-slate-100 text-xl font-black shadow-sm border border-slate-200 dark:border-slate-700/80 flex items-center justify-center touch-btn">5</button>
+                <button type="button" data-key="6" class="key-btn h-14 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-600 text-slate-800 dark:text-slate-100 text-xl font-black shadow-sm border border-slate-200 dark:border-slate-700/80 flex items-center justify-center touch-btn">6</button>
+
+                <!-- Linha 3 -->
+                <button type="button" data-key="7" class="key-btn h-14 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-600 text-slate-800 dark:text-slate-100 text-xl font-black shadow-sm border border-slate-200 dark:border-slate-700/80 flex items-center justify-center touch-btn">7</button>
+                <button type="button" data-key="8" class="key-btn h-14 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-600 text-slate-800 dark:text-slate-100 text-xl font-black shadow-sm border border-slate-200 dark:border-slate-700/80 flex items-center justify-center touch-btn">8</button>
+                <button type="button" data-key="9" class="key-btn h-14 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-600 text-slate-800 dark:text-slate-100 text-xl font-black shadow-sm border border-slate-200 dark:border-slate-700/80 flex items-center justify-center touch-btn">9</button>
+
+                <!-- Linha 4: Limpar, 0 e Backspace -->
+                <button 
+                    type="button" 
+                    id="btn-clear" 
+                    class="h-14 rounded-2xl bg-slate-200/70 dark:bg-slate-800/50 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 text-xs font-black shadow-sm border border-slate-200 dark:border-slate-700/60 flex items-center justify-center touch-btn"
+                >
+                    LIMPAR
+                </button>
+
+                <button type="button" data-key="0" class="key-btn h-14 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-600 text-slate-800 dark:text-slate-100 text-xl font-black shadow-sm border border-slate-200 dark:border-slate-700/80 flex items-center justify-center touch-btn">0</button>
+
+                <button 
+                    type="button" 
+                    id="btn-backspace" 
+                    class="h-14 rounded-2xl bg-slate-200/70 dark:bg-slate-800/50 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 text-lg font-black shadow-sm border border-slate-200 dark:border-slate-700/60 flex items-center justify-center touch-btn"
+                    title="Apagar dígito"
+                >
+                    ⌫
+                </button>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function initLoginApp() {
+    let currentSector = 'Pizza';
+    let currentPin = '';
+    let isSubmitting = false;
+
+    // Elementos do DOM
+    const sectorDisplay = document.getElementById('sector-display');
+    const pinDots = [
+        document.getElementById('dot-0'),
+        document.getElementById('dot-1'),
+        document.getElementById('dot-2'),
+        document.getElementById('dot-3')
+    ];
+    const dotsContainer = document.getElementById('pin-dots');
+    const hiddenInput = document.getElementById('hidden-pin-input');
+    const errorMessage = document.getElementById('error-message');
+    const loadingSpinner = document.getElementById('loading-spinner');
+    const sectorButtons = document.querySelectorAll('.sector-btn');
+    const keyButtons = document.querySelectorAll('.key-btn');
+    const clearBtn = document.getElementById('btn-clear');
+    const backspaceBtn = document.getElementById('btn-backspace');
+
+    function updateDots() {
+        for (let i = 0; i < 4; i++) {
+            if (i < currentPin.length) {
+                pinDots[i].classList.add('filled');
+            } else {
+                pinDots[i].classList.remove('filled');
+            }
+        }
+    }
+
+    function selectSector(sectorName, sectorLabel, clickedBtn) {
+        currentSector = sectorName;
+        sectorDisplay.textContent = sectorLabel;
+        currentPin = '';
+        updateDots();
+        clearError();
+
+        // Atualiza estilo visual dos botões de setor
+        sectorButtons.forEach(btn => {
+            btn.className = 'sector-btn p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 transition text-center touch-btn cursor-pointer bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700';
+        });
+
+        if (clickedBtn) {
+            clickedBtn.className = 'sector-btn p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 transition text-center touch-btn cursor-pointer bg-granodoc-600 text-white border-granodoc-600 shadow-md ring-2 ring-granodoc-500/30';
+        }
+
+        if (window.playTouchFeedback) playTouchFeedback();
+    }
+
+    function appendDigit(digit) {
+        if (isSubmitting || currentPin.length >= 4) return;
+        currentPin += digit.toString();
+        updateDots();
+        clearError();
+        if (window.playTouchFeedback) playTouchFeedback();
+
+        if (currentPin.length === 4) {
+            submitPin();
+        }
+    }
+
+    function removeDigit() {
+        if (isSubmitting || currentPin.length === 0) return;
+        currentPin = currentPin.slice(0, -1);
+        updateDots();
+        clearError();
+        if (window.playTouchFeedback) playTouchFeedback();
+    }
+
+    function clearPin() {
+        if (isSubmitting) return;
+        currentPin = '';
+        updateDots();
+        clearError();
+        if (window.playTouchFeedback) playTouchFeedback();
+    }
+
+    function showError(msg) {
+        errorMessage.textContent = msg;
+        errorMessage.classList.remove('hidden');
+        loadingSpinner.classList.add('hidden');
+        
+        // Efeito de shake nos dots
+        dotsContainer.classList.add('animate-shake');
+        setTimeout(() => {
+            dotsContainer.classList.remove('animate-shake');
+        }, 500);
+
+        if (navigator.vibrate) {
+            try { navigator.vibrate([50, 50, 50]); } catch(e){}
+        }
+
+        currentPin = '';
+        updateDots();
+    }
+
+    function clearError() {
+        errorMessage.textContent = '';
+        errorMessage.classList.add('hidden');
+    }
+
+    async function submitPin() {
+        if (currentPin.length !== 4 || isSubmitting) return;
+
+        isSubmitting = true;
+        clearError();
+        loadingSpinner.classList.remove('hidden');
+
+        try {
+            const response = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    setor: currentSector,
+                    pin: currentPin
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                loadingSpinner.innerHTML = '<span class="text-emerald-500 font-bold">✓ Acesso autorizado! Redirecionando...</span>';
+                if (window.showToast) {
+                    showToast('Acesso autorizado! Bem-vindo(a).', 'success', 2000);
+                }
+                setTimeout(() => {
+                    window.location.href = data.redirect_url || '/';
+                }, 300);
+            } else {
+                isSubmitting = false;
+                showError(data.detail || 'PIN incorreto para o setor selecionado. Tente novamente.');
+            }
+        } catch (err) {
+            console.error('Erro no login:', err);
+            isSubmitting = false;
+            showError('Erro de conexão ao validar o PIN.');
+        }
+    }
+
+    // Eventos dos botões de setor
+    sectorButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            selectSector(btn.dataset.sector, btn.dataset.label, btn);
+        });
+    });
+
+    // Eventos dos botões numéricos
+    keyButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            appendDigit(btn.dataset.key);
+        });
+    });
+
+    // Botões Limpar e Backspace
+    if (clearBtn) clearBtn.addEventListener('click', clearPin);
+    if (backspaceBtn) backspaceBtn.addEventListener('click', removeDigit);
+
+    // Suporte ao clique nos círculos para focar
+    if (dotsContainer) {
+        dotsContainer.addEventListener('click', () => {
+            if (hiddenInput) hiddenInput.focus();
+        });
+    }
+
+    // Suporte a teclado físico em qualquer lugar da tela
+    window.addEventListener('keydown', (e) => {
+        if (isSubmitting) return;
+        if (e.key >= '0' && e.key <= '9') {
+            appendDigit(e.key);
+        } else if (e.key === 'Backspace') {
+            removeDigit();
+        } else if (e.key === 'Escape' || e.key.toLowerCase() === 'c') {
+            clearPin();
+        }
+    });
+
+    // Inicialização
+    updateDots();
+})();
+</script>
+{% endblock %}

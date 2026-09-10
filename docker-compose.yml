@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  granodoc-app:
+    build: .
+    container_name: pedidos_granodoc
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - GRANODOC_DB_PATH=/app/data/pedidos_granodoc.db
+    volumes:
+      - granodoc_data:/app/data
+
+volumes:
+  granodoc_data:
+    driver: local

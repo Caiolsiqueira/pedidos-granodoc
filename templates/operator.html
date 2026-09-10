@@ -1,0 +1,1574 @@
+{% extends "base.html" %}
+
+{% block title %}Praça {{ current_user.nome_setor }} - Pedidos Granodoc{% endblock %}
+
+{% block content %}
+<div x-data="operatorApp()" x-init="initData()" class="relative pb-24 lg:pb-8">
+
+    <!-- CABEÇALHO DA PRAÇA -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div class="flex items-center gap-3.5">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-granodoc-600 to-amber-500 text-white flex items-center justify-center text-2xl shadow-md">
+                {% if current_user.nome_setor == 'Pizza' %}🍕
+                {% elif current_user.nome_setor == 'Cozinha' %}🍳
+                {% elif current_user.nome_setor == 'Bar' %}🍸
+                {% elif current_user.nome_setor == 'Salão' or current_user.nome_setor == 'Sommelier' %}🍷
+                {% else %}📦{% endif %}
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                        Praça {{ current_user.nome_setor }}
+                    </h1>
+                    <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                        Catálogo Ativo
+                    </span>
+                </div>
+                <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                    {{ current_user.descricao or 'Requisições de suprimentos para o turno de trabalho' }}
+                </p>
+            </div>
+        </div>
+
+        <!-- Ações do Topo -->
+        <div class="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <button 
+                type="button" 
+                @click="openCatalogManagerModal()"
+                class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black flex items-center gap-1.5 transition touch-btn shadow-sm"
+            >
+                <i data-lucide="settings-2" class="w-4 h-4"></i>
+                <span>Gerenciar Insumos & Categorias</span>
+            </button>
+
+            <button 
+                type="button" 
+                @click="openHistoryModal()"
+                class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition touch-btn border border-slate-200 dark:border-slate-700"
+            >
+                <i data-lucide="history" class="w-4 h-4 text-sky-500"></i>
+                <span>Histórico (7 dias)</span>
+                <span x-show="recentOrders.length > 0" x-text="recentOrders.length" class="ml-1 px-1.5 py-0.2 rounded-full bg-sky-500 text-white text-[10px] font-black"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- BANNER DE RASCUNHO EM ANDAMENTO -->
+    <div 
+        x-show="hasActiveDraft" 
+        x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="opacity-0 -translate-y-2"
+        x-transition:enter-end="opacity-100 translate-y-0"
+        class="mb-6 p-4.5 rounded-3xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm"
+        style="display: none;"
+    >
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-sm">
+                <i data-lucide="file-edit" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
+                        Rascunho Ativo
+                    </span>
+                    <span class="text-xs text-slate-400">&bull;</span>
+                    <span class="text-xs font-semibold text-slate-500 dark:text-slate-400" x-text="draftLastSaved ? 'Salvo às ' + draftLastSaved : 'Salvo hoje'"></span>
+                </div>
+                <p class="text-xs sm:text-sm font-bold text-amber-950 dark:text-amber-200 mt-0.5">
+                    Você possui um rascunho salvo em andamento. Continue editando ou envie para a administração.
+                </p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 self-end sm:self-auto shrink-0">
+            <button 
+                type="button" 
+                @click="saveDraft()" 
+                :disabled="totalCartCount === 0 || isSavingDraft"
+                class="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs font-bold transition touch-btn flex items-center gap-1.5"
+            >
+                <i data-lucide="bookmark" class="w-4 h-4 text-amber-500"></i>
+                <span x-text="isSavingDraft ? 'Salvando...' : 'Atualizar Rascunho'"></span>
+            </button>
+            <button 
+                type="button" 
+                @click="submitOrder()" 
+                :disabled="totalCartCount === 0 || isSubmitting"
+                class="px-4 py-2 rounded-xl bg-granodoc-600 hover:bg-granodoc-700 text-white text-xs font-black transition touch-btn flex items-center gap-1.5 shadow-md shadow-granodoc-600/30"
+            >
+                <i data-lucide="send" class="w-4 h-4"></i>
+                <span>Enviar para Administração</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- LAYOUT PRINCIPAL: GRID DE PRODUTOS + PAINEL DO RESUMO/CARRINHO -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- COLUNA PRINCIPAL: CATÁLOGO & ITENS EXTRAS (Col 8) -->
+        <div class="lg:col-span-8 space-y-6">
+
+            <!-- BARRA DE BUSCA E FILTROS DE CATEGORIA -->
+            <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+                <div class="relative">
+                    <i data-lucide="search" class="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+                    <input 
+                        type="text" 
+                        x-model="searchTerm" 
+                        placeholder="Buscar no catálogo desta praça (ex: Farinha, Queijo, Gin)..." 
+                        class="w-full pl-11 pr-10 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-sm font-medium focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                    >
+                    <button 
+                        type="button" 
+                        x-show="searchTerm" 
+                        @click="searchTerm = ''" 
+                        class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Filtros por Categoria -->
+                <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+                    <button 
+                        type="button"
+                        @click="selectedCategory = 'todas'"
+                        :class="selectedCategory === 'todas' 
+                            ? 'bg-granodoc-600 text-white font-bold' 
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-200'"
+                        class="px-3 py-1.5 rounded-lg whitespace-nowrap transition touch-btn"
+                    >
+                        Todas as Categorias (<span x-text="products.length"></span>)
+                    </button>
+                    <template x-for="cat in categories" :key="cat">
+                        <button 
+                            type="button"
+                            @click="selectedCategory = cat"
+                            :class="selectedCategory === cat 
+                                ? 'bg-granodoc-600 text-white font-bold' 
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-200'"
+                            class="px-3 py-1.5 rounded-lg whitespace-nowrap transition touch-btn"
+                            x-text="cat"
+                        ></button>
+                    </template>
+                </div>
+            </div>
+
+            <!-- GRID DE PRODUTOS DO CATÁLOGO -->
+            <div>
+                <div class="flex items-center justify-between mb-3 px-1">
+                    <h2 class="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                        <i data-lucide="package" class="w-4 h-4 text-granodoc-500"></i>
+                        <span>Insumos Disponíveis</span>
+                    </h2>
+                    <span class="text-xs text-slate-500" x-text="filteredProducts.length + ' produtos encontrados'"></span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <template x-for="prod in filteredProducts" :key="prod.id">
+                        <div 
+                            :class="cart[prod.id] && cart[prod.id].quantidade > 0 
+                                ? 'border-granodoc-500 bg-granodoc-50/20 dark:bg-granodoc-950/20 shadow-md ring-1 ring-granodoc-500/20' 
+                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm'"
+                            class="p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3"
+                        >
+                            <!-- Informações do Produto -->
+                            <div>
+                                <div class="flex items-start justify-between gap-2 mb-1">
+                                    <h3 class="text-sm font-bold text-slate-900 dark:text-white leading-snug" x-text="prod.nome"></h3>
+                                    <span class="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-black uppercase tracking-wider shrink-0" x-text="prod.unidade_medida"></span>
+                                </div>
+                                <span class="text-[11px] text-slate-500 dark:text-slate-400 font-medium" x-text="prod.categoria || 'Geral'"></span>
+                            </div>
+
+                            <!-- CONTROLES NUMÉRICOS OTIMIZADOS PARA TOQUE (+ / -) -->
+                            <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                                
+                                <div class="flex items-center gap-1">
+                                    <!-- Botão Decrementar (-) -->
+                                    <button 
+                                        type="button" 
+                                        @click="decreaseQty(prod)"
+                                        :disabled="!cart[prod.id] || cart[prod.id].quantidade <= 0"
+                                        title="Diminuir quantidade"
+                                        class="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-rose-100 dark:hover:bg-rose-950/40 text-slate-700 dark:text-slate-200 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center text-lg font-black touch-btn border border-slate-200 dark:border-slate-700"
+                                    >
+                                        −
+                                    </button>
+
+                                    <!-- Campo de Quantidade Direta -->
+                                    <input 
+                                        type="number" 
+                                        step="any"
+                                        min="0"
+                                        :value="cart[prod.id] ? cart[prod.id].quantidade : ''"
+                                        @input="setQty(prod, $event.target.value)"
+                                        placeholder="0"
+                                        class="w-16 h-11 text-center font-black text-base rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                                    >
+
+                                    <!-- Botão Incrementar (+) -->
+                                    <button 
+                                        type="button" 
+                                        @click="increaseQty(prod)"
+                                        title="Aumentar quantidade"
+                                        class="w-11 h-11 rounded-xl bg-granodoc-600 hover:bg-granodoc-700 text-white flex items-center justify-center text-lg font-black touch-btn shadow-sm"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+
+                                <!-- Atalhos Rápidos (+1, +5) -->
+                                <div class="flex items-center gap-1">
+                                    <button 
+                                        type="button" 
+                                        @click="addBatchQty(prod, 1)"
+                                        class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-bold hover:bg-slate-200 touch-btn"
+                                    >
+                                        +1
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        @click="addBatchQty(prod, 5)"
+                                        class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-bold hover:bg-slate-200 touch-btn"
+                                    >
+                                        +5
+                                    </button>
+                                </div>
+
+                            </div>
+
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Mensagem se busca vazia -->
+                <div x-show="filteredProducts.length === 0" class="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                    <i data-lucide="package-search" class="w-10 h-10 text-slate-400 mx-auto mb-2"></i>
+                    <p class="text-sm font-bold text-slate-700 dark:text-slate-300">Nenhum insumo encontrado</p>
+                    <p class="text-xs text-slate-500 mt-0.5">Tente outro termo ou adicione o item como avulso abaixo.</p>
+                </div>
+            </div>
+
+            <!-- SEÇÃO DE ITENS EXTRAS / FORA DO CATÁLOGO -->
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-amber-200 dark:border-amber-900/40 p-5 shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                            ✨
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-900 dark:text-white">Solicitar Itens Fora do Catálogo</h3>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">Insumos especiais ou que não estão na lista oficial</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Formulário Rápido de Inserção de Avulsos -->
+                <form @submit.prevent="addExtraItem()" class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                    <div class="sm:col-span-6">
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">Descrição do Insumo *</label>
+                        <input 
+                            type="text" 
+                            x-model="newExtra.descricao" 
+                            placeholder="ex: Noz-Moscada Inteira, Queijo Brie..." 
+                            required
+                            class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        >
+                    </div>
+
+                    <div class="sm:col-span-3">
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">Quantidade *</label>
+                        <input 
+                            type="number" 
+                            step="any" 
+                            min="0.1" 
+                            x-model="newExtra.quantidade" 
+                            placeholder="Qtd" 
+                            required
+                            class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        >
+                    </div>
+
+                    <div class="sm:col-span-3">
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">Unidade</label>
+                        <select 
+                            x-model="newExtra.unidade_medida"
+                            class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        >
+                            <option value="un">un (Unidade)</option>
+                            <option value="kg">kg (Quilograma)</option>
+                            <option value="g">g (Gramas)</option>
+                            <option value="pct">pct (Pacote)</option>
+                            <option value="litro">litro (Litro)</option>
+                            <option value="lata">lata (Lata)</option>
+                            <option value="garrafa">garrafa (Garrafa)</option>
+                            <option value="cx">cx (Caixa)</option>
+                        </select>
+                    </div>
+
+                    <div class="sm:col-span-12 mt-1">
+                        <button 
+                            type="submit"
+                            class="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-extrabold flex items-center justify-center gap-1.5 transition touch-btn shadow-sm"
+                        >
+                            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                            <span>Adicionar Item Extra ao Pedido</span>
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Lista de Itens Extras já Adicionados -->
+                <div x-show="extraItems.length > 0" class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-1.5">
+                    <p class="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Itens Extras Selecionados:</p>
+                    <template x-for="(ex, idx) in extraItems" :key="idx">
+                        <div class="flex items-center justify-between p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="font-black text-amber-700 dark:text-amber-300" x-text="ex.quantidade + ' ' + ex.unidade_medida"></span>
+                                <span class="text-slate-800 dark:text-slate-200 font-bold" x-text="ex.descricao"></span>
+                            </div>
+                            <button type="button" @click="removeExtraItem(idx)" class="text-rose-500 hover:text-rose-700 p-1" title="Remover">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- COLUNA LATERAL: RESUMO DO PEDIDO / CARRINHO FIXO NO DESKTOP (Col 4) -->
+        <div class="hidden lg:block lg:col-span-4">
+            <div class="sticky top-20 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl p-5 space-y-4">
+                
+                <div class="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="shopping-cart" class="w-5 h-5 text-granodoc-600"></i>
+                        <h2 class="text-base font-extrabold text-slate-900 dark:text-white">Resumo do Pedido</h2>
+                    </div>
+                    <span class="px-2.5 py-0.5 rounded-full bg-granodoc-100 dark:bg-granodoc-950 text-granodoc-700 dark:text-granodoc-300 text-xs font-black" x-text="totalCartCount + ' itens'"></span>
+                </div>
+
+                <!-- Lista de Itens Selecionados no Carrinho -->
+                <div class="max-h-[380px] overflow-y-auto space-y-2 pr-1">
+                    
+                    <!-- Itens do Catálogo -->
+                    <template x-for="item in cartItemsList" :key="item.id">
+                        <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 flex items-center justify-between text-xs">
+                            <div class="pr-2">
+                                <p class="font-bold text-slate-800 dark:text-slate-200 leading-tight" x-text="item.nome"></p>
+                                <p class="text-[10px] text-slate-500" x-text="item.unidade"></p>
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <button type="button" @click="decreaseQty(item)" class="w-6 h-6 rounded bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100 font-black flex items-center justify-center">-</button>
+                                <span class="w-10 text-center font-black text-slate-900 dark:text-white" x-text="item.quantidade"></span>
+                                <button type="button" @click="increaseQty(item)" class="w-6 h-6 rounded bg-granodoc-600 text-white font-black flex items-center justify-center">+</button>
+                                <button type="button" @click="removeItem(item.id)" class="text-slate-400 hover:text-rose-500 ml-1">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Itens Extras -->
+                    <template x-for="(ex, idx) in extraItems" :key="'ex-' + idx">
+                        <div class="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 flex items-center justify-between text-xs">
+                            <div class="pr-2">
+                                <div class="flex items-center gap-1">
+                                    <span class="text-[9px] uppercase px-1 rounded bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 font-extrabold">Extra</span>
+                                    <p class="font-bold text-slate-800 dark:text-slate-200 leading-tight" x-text="ex.descricao"></p>
+                                </div>
+                                <p class="text-[10px] text-slate-500 font-medium" x-text="ex.quantidade + ' ' + ex.unidade_medida"></p>
+                            </div>
+                            <button type="button" @click="removeExtraItem(idx)" class="text-rose-500 hover:text-rose-700 p-1">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                    </template>
+
+                    <!-- Mensagem de Carrinho Vazio -->
+                    <div x-show="totalCartCount === 0" class="text-center py-10 text-slate-400">
+                        <i data-lucide="shopping-bag" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
+                        <p class="text-xs font-semibold">Nenhum insumo selecionado.</p>
+                        <p class="text-[10px] mt-0.5">Clique em + nos produtos do catálogo para adicionar.</p>
+                    </div>
+
+                </div>
+
+                <!-- Campo de Observações do Pedido -->
+                <div class="pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-1">
+                        <i data-lucide="message-square" class="w-3.5 h-3.5 text-sky-500"></i>
+                        <span>Observações para Compras:</span>
+                    </label>
+                    <textarea 
+                        x-model="observacoes"
+                        rows="2"
+                        placeholder="Ex: Entregar até 16h; dar preferência para tomates mais firmes..."
+                        class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:ring-2 focus:ring-granodoc-500 focus:outline-none resize-none"
+                    ></textarea>
+                </div>
+
+                <!-- BOTÕES DE FINALIZAÇÃO, RASCUNHO E LIMPEZA -->
+                <div class="space-y-2">
+                    <!-- Botão Secundário: Salvar Rascunho -->
+                    <button 
+                        type="button" 
+                        @click="saveDraft()"
+                        :disabled="totalCartCount === 0 || isSavingDraft || isSubmitting"
+                        class="w-full py-2.5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-98 disabled:opacity-40 disabled:pointer-events-none text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center justify-center gap-2 transition touch-btn"
+                    >
+                        <template x-if="!isSavingDraft">
+                            <span class="flex items-center gap-2">
+                                <i data-lucide="bookmark" class="w-4 h-4 text-amber-500"></i>
+                                <span>Salvar Rascunho</span>
+                            </span>
+                        </template>
+                        <template x-if="isSavingDraft">
+                            <span class="flex items-center gap-2">
+                                <svg class="animate-spin h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                </svg>
+                                <span>Salvando Rascunho...</span>
+                            </span>
+                        </template>
+                    </button>
+
+                    <!-- Botão Principal: Finalizar e Enviar Pedido -->
+                    <button 
+                        type="button" 
+                        @click="submitOrder()"
+                        :disabled="totalCartCount === 0 || isSubmitting || isSavingDraft"
+                        class="w-full py-3.5 rounded-2xl bg-granodoc-600 hover:bg-granodoc-700 active:scale-98 disabled:opacity-40 disabled:pointer-events-none text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-granodoc-600/30 transition touch-btn"
+                    >
+                        <template x-if="!isSubmitting">
+                            <span class="flex items-center gap-2">
+                                <i data-lucide="send" class="w-4 h-4"></i>
+                                <span>Finalizar e Enviar Pedido</span>
+                            </span>
+                        </template>
+                        <template x-if="isSubmitting">
+                            <span class="flex items-center gap-2">
+                                <svg class="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                </svg>
+                                <span>Enviando para Administração...</span>
+                            </span>
+                        </template>
+                    </button>
+
+                    <button 
+                        type="button" 
+                        x-show="totalCartCount > 0"
+                        @click="clearAllCart()" 
+                        class="w-full py-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-500 transition text-center"
+                    >
+                        Limpar Todos os Itens
+                    </button>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- BARRA INFERIOR FLUTUANTE NO MOBILE (Sticky Bottom Bar Mobile-First) -->
+    <!-- ========================================================================= -->
+    <div class="lg:hidden fixed bottom-0 left-0 right-0 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 z-30 flex items-center justify-between gap-3 shadow-2xl">
+        <div class="flex items-center gap-2">
+            <div class="w-10 h-10 rounded-xl bg-granodoc-600 text-white flex items-center justify-center font-bold text-sm shadow">
+                <span x-text="totalCartCount"></span>
+            </div>
+            <div>
+                <p class="text-xs font-bold text-slate-900 dark:text-white leading-tight">Itens no Pedido</p>
+                <p class="text-[10px] text-slate-500" x-text="totalCartCount > 0 ? 'Pronto para revisão' : 'Carrinho vazio'"></p>
+            </div>
+        </div>
+
+        <button 
+            type="button" 
+            @click="showMobileDrawer = true"
+            :disabled="totalCartCount === 0"
+            class="px-5 py-2.5 rounded-xl bg-granodoc-600 hover:bg-granodoc-700 disabled:opacity-40 text-white font-extrabold text-xs flex items-center gap-2 shadow-md touch-btn"
+        >
+            <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+            <span>Ver e Enviar Pedido</span>
+        </button>
+    </div>
+
+    <!-- GAVETA (BOTTOM SHEET / MODAL) DO CARRINHO NO MOBILE -->
+    <div 
+        x-show="showMobileDrawer" 
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+        class="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm lg:hidden flex flex-col justify-end"
+        style="display: none;"
+    >
+        <div 
+            @click.away="showMobileDrawer = false"
+            class="bg-white dark:bg-slate-900 rounded-t-3xl border-t border-slate-200 dark:border-slate-800 max-h-[85vh] flex flex-col p-5 shadow-2xl space-y-4"
+        >
+            <div class="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="shopping-cart" class="w-5 h-5 text-granodoc-600"></i>
+                    <h2 class="text-base font-black text-slate-900 dark:text-white">Revisar Pedido da Praça</h2>
+                </div>
+                <button type="button" @click="showMobileDrawer = false" class="p-1 text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <!-- Lista de Itens no Mobile Drawer -->
+            <div class="overflow-y-auto flex-1 space-y-2 pr-1 max-h-[45vh]">
+                <template x-for="item in cartItemsList" :key="item.id">
+                    <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs">
+                        <div>
+                            <p class="font-bold text-slate-800 dark:text-slate-200" x-text="item.nome"></p>
+                            <p class="text-[10px] text-slate-500" x-text="item.unidade"></p>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button type="button" @click="decreaseQty(item)" class="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-bold flex items-center justify-center">-</button>
+                            <span class="w-8 text-center font-bold" x-text="item.quantidade"></span>
+                            <button type="button" @click="increaseQty(item)" class="w-8 h-8 rounded-lg bg-granodoc-600 text-white font-bold flex items-center justify-center">+</button>
+                            <button type="button" @click="removeItem(item.id)" class="text-rose-500 p-1">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                </template>
+
+                <template x-for="(ex, idx) in extraItems" :key="'mob-ex-' + idx">
+                    <div class="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 flex items-center justify-between text-xs">
+                        <div>
+                            <span class="text-[9px] uppercase px-1 rounded bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 font-extrabold">Extra</span>
+                            <p class="font-bold text-slate-800 dark:text-slate-200" x-text="ex.descricao"></p>
+                            <p class="text-[10px] text-slate-500" x-text="ex.quantidade + ' ' + ex.unidade_medida"></p>
+                        </div>
+                        <button type="button" @click="removeExtraItem(idx)" class="text-rose-500 p-1">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Observações no Drawer -->
+            <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">Observações:</label>
+                <textarea 
+                    x-model="observacoes"
+                    rows="2"
+                    placeholder="Instruções adicionais para a administração..."
+                    class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                ></textarea>
+            </div>
+
+            <!-- Botões Enviar e Rascunho Mobile -->
+            <div class="space-y-2 pt-1">
+                <button 
+                    type="button" 
+                    @click="saveDraft()"
+                    :disabled="totalCartCount === 0 || isSavingDraft || isSubmitting"
+                    class="w-full py-3 rounded-2xl border-2 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-98 disabled:opacity-40 disabled:pointer-events-none text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center justify-center gap-2 transition touch-btn"
+                >
+                    <i data-lucide="bookmark" class="w-4 h-4 text-amber-500"></i>
+                    <span x-text="isSavingDraft ? 'Salvando Rascunho...' : 'Salvar Rascunho'"></span>
+                </button>
+
+                <button 
+                    type="button" 
+                    @click="submitOrder()" 
+                    :disabled="totalCartCount === 0 || isSubmitting || isSavingDraft"
+                    class="w-full py-4 rounded-2xl bg-granodoc-600 hover:bg-granodoc-700 text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg touch-btn"
+                >
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                    <span x-text="isSubmitting ? 'Enviando...' : 'Confirmar e Enviar Pedido'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- MODAL DE HISTÓRICO RECENTE (ÚLTIMOS 7 DIAS) -->
+    <!-- ========================================================================= -->
+    <div 
+        x-show="showHistoryModal" 
+        x-transition 
+        class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4"
+        style="display: none;"
+    >
+        <div 
+            @click.away="showHistoryModal = false"
+            class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl p-6 space-y-4"
+        >
+            <div class="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-sky-100 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+                        <i data-lucide="history" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-black text-slate-900 dark:text-white">Histórico dos Últimos 7 Dias</h2>
+                        <p class="text-xs text-slate-500">Pedidos realizados pela praça {{ current_user.nome_setor }}</p>
+                    </div>
+                </div>
+                <button type="button" @click="showHistoryModal = false" class="p-1 text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <div class="overflow-y-auto flex-1 space-y-3 pr-1">
+                <template x-for="order in recentOrders" :key="order.id">
+                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-2">
+                        <div class="flex items-center justify-between text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-slate-900 dark:text-white" x-text="'Pedido #' + order.id"></span>
+                                <span class="text-slate-400">&bull;</span>
+                                <span class="text-slate-500 font-medium" x-text="formatDateTime(order.data_hora)"></span>
+                            </div>
+                            <!-- Status Badge -->
+                            <span 
+                                :class="{
+                                    'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300': order.status === 'Pendente',
+                                    'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-300': order.status === 'Aprovado',
+                                    'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300': order.status === 'Comprado'
+                                }"
+                                class="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider border"
+                                x-text="order.status"
+                            ></span>
+                        </div>
+
+                        <!-- Itens do Pedido no Histórico -->
+                        <div class="pt-2 text-xs text-slate-600 dark:text-slate-300 space-y-1">
+                            <template x-for="it in order.itens_catalogo" :key="'hist-it-' + it.id">
+                                <div class="flex items-center justify-between">
+                                    <span x-text="it.nome_produto"></span>
+                                    <span class="font-bold" x-text="it.quantidade_pedida + ' ' + it.unidade_medida"></span>
+                                </div>
+                            </template>
+                            <template x-for="av in order.itens_avulsos" :key="'hist-av-' + av.id">
+                                <div class="flex items-center justify-between text-amber-600 dark:text-amber-400">
+                                    <span x-text="'✨ ' + av.descricao_item"></span>
+                                    <span class="font-bold" x-text="av.quantidade + ' ' + av.unidade_medida"></span>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div x-show="order.observacoes" class="pt-2 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-500 italic">
+                            <span class="font-bold not-italic">Obs:</span> <span x-text="order.observacoes"></span>
+                        </div>
+                    </div>
+                </template>
+
+                <div x-show="recentOrders.length === 0" class="text-center py-12 text-slate-400">
+                    <i data-lucide="inbox" class="w-10 h-10 mx-auto mb-2 opacity-40"></i>
+                    <p class="text-sm font-bold">Nenhum pedido nos últimos 7 dias</p>
+                    <p class="text-xs">Seus novos pedidos aparecerão listados aqui.</p>
+                </div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-200 dark:border-slate-800 text-right">
+                <button type="button" @click="showHistoryModal = false" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold touch-btn">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- MODAL DE GERENCIAMENTO DE INSUMOS & CATEGORIAS (PRAÇA) -->
+    <!-- ========================================================================= -->
+    <div 
+        x-show="showCatalogModal" 
+        x-transition 
+        class="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5"
+        style="display: none;"
+    >
+        <div 
+            @click.away="closeCatalogManagerModal()"
+            class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl p-5 sm:p-6 space-y-4"
+        >
+            <!-- Cabeçalho do Modal -->
+            <div class="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow">
+                        <i data-lucide="package-plus" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                            Gerenciador de Insumos & Categorias
+                        </h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">
+                            Praça {{ current_user.nome_setor }} &bull; Cadastre, edite ou exclua insumos fixos da sua praça
+                        </p>
+                    </div>
+                </div>
+                <button type="button" @click="closeCatalogManagerModal()" class="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Abas do Modal -->
+            <div class="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto no-scrollbar">
+                <button 
+                    type="button" 
+                    @click="catalogTab = 'items'"
+                    :class="catalogTab === 'items' ? 'bg-granodoc-600 text-white font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium'"
+                    class="px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition touch-btn shrink-0"
+                >
+                    <i data-lucide="list" class="w-3.5 h-3.5"></i>
+                    <span>Insumos da Praça (<span x-text="products.length"></span>)</span>
+                </button>
+
+                <button 
+                    type="button" 
+                    @click="catalogTab = 'new_single'"
+                    :class="catalogTab === 'new_single' ? 'bg-granodoc-600 text-white font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium'"
+                    class="px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition touch-btn shrink-0"
+                >
+                    <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+                    <span>+ Novo Insumo</span>
+                </button>
+
+                <button 
+                    type="button" 
+                    @click="catalogTab = 'categories'"
+                    :class="catalogTab === 'categories' ? 'bg-granodoc-600 text-white font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium'"
+                    class="px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition touch-btn shrink-0"
+                >
+                    <i data-lucide="tags" class="w-3.5 h-3.5"></i>
+                    <span>Categorias (<span x-text="sectorCategories.length"></span>)</span>
+                </button>
+
+                <button 
+                    type="button" 
+                    @click="catalogTab = 'batch'"
+                    :class="catalogTab === 'batch' ? 'bg-amber-500 text-slate-950 font-black' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium'"
+                    class="px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition touch-btn shrink-0"
+                >
+                    <i data-lucide="file-plus" class="w-3.5 h-3.5"></i>
+                    <span>⚡ Cadastro em Lote</span>
+                </button>
+            </div>
+
+            <!-- Conteúdo da Aba 1: Lista e Exclusão de Insumos -->
+            <div x-show="catalogTab === 'items'" class="flex-1 overflow-y-auto space-y-3 pr-1 max-h-[55vh]">
+                <div class="relative">
+                    <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                    <input 
+                        type="text" 
+                        x-model="modalSearchTerm" 
+                        placeholder="Filtrar insumos cadastrados..."
+                        class="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-granodoc-500"
+                    >
+                </div>
+
+                <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+                    <template x-for="p in modalFilteredProducts" :key="p.id">
+                        <div class="p-3 bg-white dark:bg-slate-900 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-xs">
+                            <div class="space-y-0.5">
+                                <p class="font-bold text-slate-900 dark:text-white" x-text="p.nome"></p>
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold text-[10px]" x-text="p.categoria || 'Geral'"></span>
+                                    <span class="text-slate-400">&bull;</span>
+                                    <span class="uppercase font-black text-slate-500 text-[10px]" x-text="p.unidade_medida"></span>
+                                </div>
+                            </div>
+                            <button 
+                                type="button" 
+                                @click="deleteProductItem(p.id, p.nome)" 
+                                class="p-2 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition touch-btn" 
+                                title="Excluir do catálogo"
+                            >
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </template>
+                    <div x-show="modalFilteredProducts.length === 0" class="p-8 text-center text-slate-400 text-xs">
+                        Nenhum insumo encontrado nesta busca.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Conteúdo da Aba 2: Novo Insumo Individual -->
+            <div x-show="catalogTab === 'new_single'" class="space-y-4">
+                <form @submit.prevent="submitNewSingleProduct()" class="space-y-3 text-xs">
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Nome do Insumo *</label>
+                        <input 
+                            type="text" 
+                            x-model="newProdForm.nome" 
+                            placeholder="ex: Queijo Provolone Defumado, Farinha Semolina..." 
+                            required 
+                            class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                        >
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block font-bold text-slate-500 mb-1">Categoria</label>
+                            <div class="space-y-1.5">
+                                <select 
+                                    x-model="newProdForm.categoria" 
+                                    class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                                >
+                                    <option value="">-- Selecione ou digite nova abaixo --</option>
+                                    <template x-for="cat in sectorCategories" :key="cat.id">
+                                        <option :value="cat.nome" x-text="cat.nome"></option>
+                                    </template>
+                                    <option value="__NOVA__">+ Digitar Nova Categoria...</option>
+                                </select>
+                                <input 
+                                    type="text" 
+                                    x-show="newProdForm.categoria === '__NOVA__'" 
+                                    x-model="newProdForm.nova_categoria" 
+                                    placeholder="Digite o nome da nova categoria..." 
+                                    class="w-full p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 text-xs font-semibold focus:outline-none"
+                                >
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block font-bold text-slate-500 mb-1">Unidade de Medida *</label>
+                            <select 
+                                x-model="newProdForm.unidade" 
+                                required 
+                                class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                            >
+                                <option value="kg">kg (Quilograma)</option>
+                                <option value="un">un (Unidade)</option>
+                                <option value="pct">pct (Pacote)</option>
+                                <option value="litro">litro (Litro)</option>
+                                <option value="lata">lata (Lata)</option>
+                                <option value="garrafa">garrafa (Garrafa)</option>
+                                <option value="cx">cx (Caixa)</option>
+                                <option value="g">g (Gramas)</option>
+                                <option value="maço">maço (Maço / Molho)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button 
+                        type="submit" 
+                        class="w-full py-3 rounded-xl bg-granodoc-600 hover:bg-granodoc-700 text-white font-black text-xs transition touch-btn shadow-md mt-2"
+                    >
+                        Salvar e Adicionar ao Catálogo Fixo
+                    </button>
+                </form>
+            </div>
+
+            <!-- Conteúdo da Aba 3: Gestão de Categorias -->
+            <div x-show="catalogTab === 'categories'" class="space-y-4">
+                <!-- Formulário de Nova Categoria -->
+                <form @submit.prevent="submitNewCategory()" class="flex gap-2">
+                    <input 
+                        type="text" 
+                        x-model="newCategoryName" 
+                        placeholder="Nome da nova categoria (ex: Massas Frescas, Embutidos Especializados)..." 
+                        required 
+                        class="flex-1 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-granodoc-500"
+                    >
+                    <button 
+                        type="submit" 
+                        class="px-4 py-2.5 rounded-xl bg-granodoc-600 hover:bg-granodoc-700 text-white font-bold text-xs shrink-0 transition touch-btn"
+                    >
+                        + Criar Categoria
+                    </button>
+                </form>
+
+                <div class="max-h-[45vh] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+                    <template x-for="cat in sectorCategories" :key="cat.id">
+                        <div class="p-3 bg-white dark:bg-slate-900 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 text-xs">
+                            <div>
+                                <span class="font-bold text-slate-800 dark:text-slate-200" x-text="cat.nome"></span>
+                                <span class="text-[10px] text-slate-400 ml-1.5" x-text="'(' + (cat.total_produtos || 0) + ' produtos)'"></span>
+                            </div>
+                            <button 
+                                type="button" 
+                                @click="deleteCategoryItem(cat.id, cat.nome)" 
+                                class="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                                title="Excluir categoria"
+                            >
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Conteúdo da Aba 4: Cadastro em Lote -->
+            <div x-show="catalogTab === 'batch'" class="space-y-3 text-xs">
+                
+                <!-- BANNER DE DOWNLOAD DO MODELO OFICIAL -->
+                <div class="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-amber-500/10 border border-emerald-300/60 dark:border-emerald-800/60 rounded-2xl p-3.5 space-y-2.5">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600 dark:text-emerald-400"></i>
+                            <p class="font-black text-slate-900 dark:text-white text-xs">
+                                Modelos de Planilha (.xlsx e .csv)
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <a 
+                                href="/api/catalog/template/excel" 
+                                download="modelo_cadastro_insumos.xlsx"
+                                class="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-sm transition touch-btn"
+                            >
+                                <i data-lucide="download" class="w-3 h-3"></i>
+                                <span>Excel (.xlsx)</span>
+                            </a>
+                            <a 
+                                href="/api/catalog/template/csv" 
+                                download="modelo_cadastro_insumos.csv"
+                                class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-[11px] flex items-center gap-1 border border-slate-200 dark:border-slate-700 shadow-sm transition touch-btn"
+                            >
+                                <i data-lucide="file-text" class="w-3 h-3"></i>
+                                <span>CSV (.csv)</span>
+                            </a>
+                        </div>
+                    </div>
+                    <p class="text-[10px] text-slate-500 dark:text-slate-400">
+                        Ordem das colunas: <strong>1ª Nome</strong> | <strong>2ª Categoria</strong> | <strong>3ª Unidade (kg, g, litro, un, lata, garrafa, pct...)</strong>
+                    </p>
+                </div>
+
+                <!-- CARREGAR ARQUIVO DIRETAMENTE -->
+                <div class="border-2 border-dashed border-amber-300 dark:border-amber-800/80 rounded-2xl p-3 text-center hover:border-amber-500 transition cursor-pointer relative bg-amber-50/20 dark:bg-amber-950/20">
+                    <input 
+                        type="file" 
+                        accept=".xlsx, .xls, .csv, .txt" 
+                        @change="handleFileUploadOperator($event)" 
+                        :disabled="isBatchLoading"
+                        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    >
+                    <div class="flex items-center justify-center gap-2 text-slate-600 dark:text-slate-300 pointer-events-none">
+                        <i data-lucide="upload" class="w-4 h-4 text-amber-500"></i>
+                        <span class="font-bold text-xs text-slate-800 dark:text-slate-100">Carregar Planilha Preenchida (.xlsx ou .csv)</span>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 text-slate-400">
+                    <div class="h-px bg-slate-200 dark:bg-slate-800 flex-1"></div>
+                    <span class="text-[9px] font-bold uppercase tracking-wider">Ou Cole Linhas Abaixo</span>
+                    <div class="h-px bg-slate-200 dark:bg-slate-800 flex-1"></div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Categoria Padrão:</label>
+                        <select x-model="batchForm.default_categoria" class="w-full p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold focus:outline-none">
+                            <option value="Geral">Geral</option>
+                            <template x-for="cat in sectorCategories" :key="cat.id">
+                                <option :value="cat.nome" x-text="cat.nome"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Unidade Padrão:</label>
+                        <select x-model="batchForm.default_unidade" class="w-full p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold focus:outline-none">
+                            <option value="kg">kg (Quilograma)</option>
+                            <option value="un">un (Unidade)</option>
+                            <option value="pct">pct (Pacote)</option>
+                            <option value="litro">litro (Litro)</option>
+                            <option value="lata">lata (Lata)</option>
+                            <option value="garrafa">garrafa (Garrafa)</option>
+                            <option value="cx">cx (Caixa)</option>
+                            <option value="mç">mç (Maço)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <textarea 
+                    x-model="batchForm.raw_text" 
+                    rows="5" 
+                    placeholder="Cole aqui células copiadas do Excel (TAB) ou separadas por ';'&#10;Exemplo:&#10;Queijo Fontina; Laticínios; kg&#10;Molho Pesto Genovês; Molhos; kg&#10;Azeitonas Pretas sem Caroço"
+                    class="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono focus:ring-2 focus:ring-amber-500 focus:outline-none resize-none"
+                ></textarea>
+
+                <button 
+                    type="button" 
+                    @click="submitBatchProducts()"
+                    :disabled="isBatchLoading || !batchForm.raw_text.trim()"
+                    class="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-black text-xs transition touch-btn shadow-md flex items-center justify-center gap-2"
+                >
+                    <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                    <span x-text="isBatchLoading ? 'Cadastrando Insumos...' : 'Cadastrar Todos os Insumos em Lote'"></span>
+                </button>
+            </div>
+
+            <!-- Rodapé do Modal -->
+            <div class="pt-2 border-t border-slate-200 dark:border-slate-800 text-right">
+                <button type="button" @click="closeCatalogManagerModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold transition touch-btn">
+                    Fechar Gerenciador
+                </button>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function operatorApp() {
+    return {
+        products: [],
+        categories: [],
+        selectedCategory: 'todas',
+        searchTerm: '',
+        cart: {},          // prodId -> { id, nome, unidade, quantidade }
+        extraItems: [],    // [ { descricao, quantidade, unidade_medida } ]
+        newExtra: { descricao: '', quantidade: '', unidade_medida: 'un' },
+        observacoes: '',
+        recentOrders: [],
+        showHistoryModal: false,
+        showMobileDrawer: false,
+        isSubmitting: false,
+
+        // Estado de Rascunho (Draft)
+        hasActiveDraft: false,
+        draftId: null,
+        draftLastSaved: '',
+        isSavingDraft: false,
+
+        // Estado do Gerenciador de Catálogo da Praça
+        showCatalogModal: false,
+        catalogTab: 'items',
+        modalSearchTerm: '',
+        sectorCategories: [],
+        newProdForm: { nome: '', unidade: 'kg', categoria: '', nova_categoria: '' },
+        newCategoryName: '',
+        batchForm: { raw_text: '', default_categoria: 'Geral', default_unidade: 'kg' },
+        isBatchLoading: false,
+
+        async initData() {
+            await this.loadProducts();
+            await this.loadActiveDraft();
+            await this.loadRecentOrders();
+            await this.loadSectorCategories();
+        },
+
+        async loadProducts() {
+            try {
+                const res = await fetch('/api/products/sector');
+                if (res.ok) {
+                    this.products = await res.json();
+                    // Extrai categorias únicas
+                    const cats = new Set(this.products.map(p => p.categoria).filter(Boolean));
+                    this.categories = Array.from(cats);
+                }
+            } catch (err) {
+                console.error('Erro ao carregar produtos:', err);
+                showToast('Falha ao carregar catálogo.', 'error');
+            }
+        },
+
+        async loadActiveDraft() {
+            try {
+                const res = await fetch('/api/orders/draft');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.has_draft && data.draft) {
+                        const draft = data.draft;
+                        this.hasActiveDraft = true;
+                        this.draftId = draft.id;
+                        this.draftLastSaved = draft.data_hora ? this.formatDateTime(draft.data_hora) : '';
+                        this.observacoes = draft.observacoes || '';
+
+                        // Preenche catálogo
+                        if (draft.itens_catalogo && draft.itens_catalogo.length > 0) {
+                            for (const it of draft.itens_catalogo) {
+                                this.cart[it.produto_id] = {
+                                    id: it.produto_id,
+                                    nome: it.nome_produto,
+                                    unidade: it.unidade_medida,
+                                    quantidade: it.quantidade_pedida
+                                };
+                            }
+                        }
+
+                        // Preenche itens extras
+                        if (draft.itens_avulsos && draft.itens_avulsos.length > 0) {
+                            this.extraItems = draft.itens_avulsos.map(ex => ({
+                                descricao: ex.descricao_item,
+                                quantidade: ex.quantidade,
+                                unidade_medida: ex.unidade_medida
+                            }));
+                        }
+                        this.$nextTick(() => {
+                            if (window.lucide) lucide.createIcons();
+                        });
+                    } else {
+                        this.hasActiveDraft = false;
+                        this.draftId = null;
+                        this.draftLastSaved = '';
+                    }
+                }
+            } catch (err) {
+                console.error('Erro ao verificar rascunho:', err);
+            }
+        },
+
+        async loadRecentOrders() {
+            try {
+                const res = await fetch('/api/orders/recent?days=7');
+                if (res.ok) {
+                    this.recentOrders = await res.json();
+                }
+            } catch (err) {
+                console.error('Erro ao carregar histórico:', err);
+            }
+        },
+
+        async loadSectorCategories() {
+            try {
+                const res = await fetch('/api/categories');
+                if (res.ok) {
+                    this.sectorCategories = await res.json();
+                }
+            } catch (err) {
+                console.error('Erro ao carregar categorias:', err);
+            }
+        },
+
+        get filteredProducts() {
+            return this.products.filter(p => {
+                const matchesCat = this.selectedCategory === 'todas' || p.categoria === this.selectedCategory;
+                const matchesSearch = !this.searchTerm || p.nome.toLowerCase().includes(this.searchTerm.toLowerCase()) || (p.categoria && p.categoria.toLowerCase().includes(this.searchTerm.toLowerCase()));
+                return matchesCat && matchesSearch;
+            });
+        },
+
+        get modalFilteredProducts() {
+            return this.products.filter(p => {
+                if (!this.modalSearchTerm) return true;
+                const s = this.modalSearchTerm.toLowerCase();
+                return p.nome.toLowerCase().includes(s) || (p.categoria && p.categoria.toLowerCase().includes(s));
+            });
+        },
+
+        get cartItemsList() {
+            return Object.values(this.cart).filter(item => item.quantidade > 0);
+        },
+
+        get totalCartCount() {
+            return this.cartItemsList.length + this.extraItems.length;
+        },
+
+        increaseQty(prod) {
+            if (!this.cart[prod.id]) {
+                this.cart[prod.id] = {
+                    id: prod.id,
+                    nome: prod.nome,
+                    unidade: prod.unidade_medida,
+                    quantidade: 1
+                };
+            } else {
+                this.cart[prod.id].quantidade = Math.round((this.cart[prod.id].quantidade + 1) * 10) / 10;
+            }
+            playTouchFeedback();
+        },
+
+        decreaseQty(prod) {
+            if (this.cart[prod.id]) {
+                if (this.cart[prod.id].quantidade > 1) {
+                    this.cart[prod.id].quantidade = Math.round((this.cart[prod.id].quantidade - 1) * 10) / 10;
+                } else {
+                    delete this.cart[prod.id];
+                }
+                playTouchFeedback();
+            }
+        },
+
+        setQty(prod, value) {
+            const val = parseFloat(value);
+            if (!isNaN(val) && val > 0) {
+                this.cart[prod.id] = {
+                    id: prod.id,
+                    nome: prod.nome,
+                    unidade: prod.unidade_medida,
+                    quantidade: val
+                };
+            } else {
+                delete this.cart[prod.id];
+            }
+        },
+
+        addBatchQty(prod, amount) {
+            if (!this.cart[prod.id]) {
+                this.cart[prod.id] = {
+                    id: prod.id,
+                    nome: prod.nome,
+                    unidade: prod.unidade_medida,
+                    quantidade: amount
+                };
+            } else {
+                this.cart[prod.id].quantidade = Math.round((this.cart[prod.id].quantidade + amount) * 10) / 10;
+            }
+            playTouchFeedback();
+            showToast(`Adicionado +${amount} ${prod.unidade_medida} de ${prod.nome}`, 'info', 1500);
+        },
+
+        removeItem(prodId) {
+            delete this.cart[prodId];
+            playTouchFeedback();
+        },
+
+        addExtraItem() {
+            const desc = this.newExtra.descricao.trim();
+            const qtd = parseFloat(this.newExtra.quantidade);
+            if (!desc || isNaN(qtd) || qtd <= 0) {
+                showToast('Informe a descrição e quantidade válida.', 'warning');
+                return;
+            }
+            this.extraItems.push({
+                descricao: desc,
+                quantidade: qtd,
+                unidade_medida: this.newExtra.unidade_medida
+            });
+            this.newExtra = { descricao: '', quantidade: '', unidade_medida: 'un' };
+            playTouchFeedback();
+            showToast(`Item extra "${desc}" adicionado!`, 'success', 2000);
+        },
+
+        removeExtraItem(idx) {
+            this.extraItems.splice(idx, 1);
+            playTouchFeedback();
+        },
+
+        clearAllCart() {
+            if (confirm('Deseja limpar todos os itens selecionados?')) {
+                this.cart = {};
+                this.extraItems = [];
+                this.observacoes = '';
+                showToast('Carrinho limpo.', 'info');
+            }
+        },
+
+        async saveDraft() {
+            if (this.totalCartCount === 0) {
+                showToast('Adicione pelo menos um item para salvar o rascunho.', 'warning');
+                return;
+            }
+
+            this.isSavingDraft = true;
+
+            const payload = {
+                itens_catalogo: this.cartItemsList.map(item => ({
+                    produto_id: item.id,
+                    quantidade: item.quantidade
+                })),
+                itens_avulsos: this.extraItems.map(ex => ({
+                    descricao: ex.descricao,
+                    quantidade: ex.quantidade,
+                    unidade_medida: ex.unidade_medida
+                })),
+                observacoes: this.observacoes.trim() || null
+            };
+
+            try {
+                const res = await fetch('/api/orders/draft', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    this.hasActiveDraft = true;
+                    this.draftId = data.pedido_id;
+                    const now = new Date();
+                    this.draftLastSaved = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                    showToast('Rascunho salvo com sucesso! Você pode continuar editando mais tarde.', 'info', 4000);
+                    this.$nextTick(() => {
+                        if (window.lucide) lucide.createIcons();
+                    });
+                } else {
+                    showToast(data.detail || 'Erro ao salvar rascunho.', 'error');
+                }
+            } catch (err) {
+                console.error('Erro ao salvar rascunho:', err);
+                showToast('Erro de conexão ao salvar rascunho.', 'error');
+            } finally {
+                this.isSavingDraft = false;
+            }
+        },
+
+        async submitOrder() {
+            if (this.totalCartCount === 0) {
+                showToast('Adicione pelo menos um item para enviar o pedido.', 'warning');
+                return;
+            }
+
+            this.isSubmitting = true;
+
+            const payload = {
+                itens_catalogo: this.cartItemsList.map(item => ({
+                    produto_id: item.id,
+                    quantidade: item.quantidade
+                })),
+                itens_avulsos: this.extraItems.map(ex => ({
+                    descricao: ex.descricao,
+                    quantidade: ex.quantidade,
+                    unidade_medida: ex.unidade_medida
+                })),
+                observacoes: this.observacoes.trim() || null
+            };
+
+            try {
+                const res = await fetch('/api/orders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    showToast('Pedido enviado com sucesso para a administração!', 'success', 4500);
+                    // Limpar carrinho e estado do rascunho
+                    this.cart = {};
+                    this.extraItems = [];
+                    this.observacoes = '';
+                    this.hasActiveDraft = false;
+                    this.draftId = null;
+                    this.draftLastSaved = '';
+                    this.showMobileDrawer = false;
+                    // Recarrega histórico recente
+                    await this.loadRecentOrders();
+                } else {
+                    showToast(data.detail || 'Erro ao enviar pedido.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Erro de conexão ao enviar pedido.', 'error');
+            } finally {
+                this.isSubmitting = false;
+            }
+        },
+
+        openHistoryModal() {
+            this.showHistoryModal = true;
+            this.loadRecentOrders();
+        },
+
+        // --- MÉTODOS DO GERENCIADOR DE CATÁLOGO & CATEGORIAS ---
+
+        async openCatalogManagerModal() {
+            this.showCatalogModal = true;
+            await this.loadSectorCategories();
+            await this.loadProducts();
+            this.$nextTick(() => {
+                if (window.lucide) lucide.createIcons();
+            });
+        },
+
+        async closeCatalogManagerModal() {
+            this.showCatalogModal = false;
+            await this.loadProducts();
+            await this.loadSectorCategories();
+            this.$nextTick(() => {
+                if (window.lucide) lucide.createIcons();
+            });
+        },
+
+        async submitNewSingleProduct() {
+            const nome = this.newProdForm.nome.trim();
+            if (!nome) return;
+
+            let catFinal = this.newProdForm.categoria;
+            if (catFinal === '__NOVA__') {
+                catFinal = this.newProdForm.nova_categoria.trim() || 'Geral';
+            } else if (!catFinal) {
+                catFinal = 'Geral';
+            }
+
+            try {
+                const res = await fetch('/api/products', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nome: nome,
+                        setor: '{{ current_user.nome_setor }}',
+                        unidade: this.newProdForm.unidade,
+                        categoria: catFinal
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Insumo "${nome}" cadastrado no catálogo!`, 'success');
+                    this.newProdForm = { nome: '', unidade: 'kg', categoria: '', nova_categoria: '' };
+                    this.catalogTab = 'items';
+                    await this.loadProducts();
+                    await this.loadSectorCategories();
+                } else {
+                    showToast(data.detail || 'Erro ao cadastrar insumo.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Falha na comunicação.', 'error');
+            }
+        },
+
+        async deleteProductItem(prodId, prodNome) {
+            if (!confirm(`Deseja realmente excluir ou desativar "${prodNome}" do catálogo fixo?`)) return;
+
+            try {
+                const res = await fetch(`/api/products/${prodId}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(data.message || 'Insumo removido com sucesso.', 'info', 3000);
+                    // Remove do carrinho se estava lá
+                    delete this.cart[prodId];
+                    await this.loadProducts();
+                    await this.loadSectorCategories();
+                } else {
+                    showToast(data.detail || 'Erro ao excluir insumo.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Falha ao excluir insumo.', 'error');
+            }
+        },
+
+        async submitNewCategory() {
+            const nome = this.newCategoryName.trim();
+            if (!nome) return;
+
+            try {
+                const res = await fetch('/api/categories', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nome: nome,
+                        setor: '{{ current_user.nome_setor }}'
+                    })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Categoria "${nome}" criada com sucesso!`, 'success');
+                    this.newCategoryName = '';
+                    await this.loadSectorCategories();
+                    await this.loadProducts();
+                } else {
+                    showToast(data.detail || 'Erro ao criar categoria.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Falha ao criar categoria.', 'error');
+            }
+        },
+
+        async deleteCategoryItem(catId, catNome) {
+            if (!confirm(`Excluir a categoria "${catNome}"? Os produtos vinculados a ela serão movidos para a categoria "Geral".`)) return;
+
+            try {
+                const res = await fetch(`/api/categories/${catId}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Categoria "${catNome}" excluída.`, 'info');
+                    await this.loadSectorCategories();
+                    await this.loadProducts();
+                } else {
+                    showToast(data.detail || 'Erro ao excluir categoria.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Falha ao excluir categoria.', 'error');
+            }
+        },
+
+        async submitBatchProducts() {
+            const text = this.batchForm.raw_text.trim();
+            if (!text) {
+                showToast('Cole ao menos um insumo na caixa de texto ou carregue uma planilha.', 'warning');
+                return;
+            }
+
+            this.isBatchLoading = true;
+            try {
+                const res = await fetch('/api/products/batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        setor: '{{ current_user.nome_setor }}',
+                        raw_text: text,
+                        default_categoria: this.batchForm.default_categoria || 'Geral',
+                        default_unidade: this.batchForm.default_unidade || 'kg'
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Sucesso! ${data.count} novos insumos foram adicionados ao catálogo!`, 'success', 4000);
+                    this.batchForm.raw_text = '';
+                    this.catalogTab = 'items';
+                    await this.loadProducts();
+                    await this.loadSectorCategories();
+                } else {
+                    showToast(data.detail || 'Erro no cadastro em lote.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Falha ao processar lote.', 'error');
+            } finally {
+                this.isBatchLoading = false;
+            }
+        },
+
+        async handleFileUploadOperator(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('setor', '{{ current_user.nome_setor }}');
+            formData.append('default_categoria', this.batchForm.default_categoria || 'Geral');
+            formData.append('default_unidade', this.batchForm.default_unidade || 'kg');
+
+            this.isBatchLoading = true;
+            try {
+                const res = await fetch('/api/products/upload-file', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Sucesso! ${data.count} produtos importados do arquivo ${data.filename}!`, 'success', 4500);
+                    this.catalogTab = 'items';
+                    await this.loadProducts();
+                    await this.loadSectorCategories();
+                } else {
+                    showToast(data.detail || 'Erro ao processar planilha.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Falha no envio da planilha.', 'error');
+            } finally {
+                this.isBatchLoading = false;
+                event.target.value = '';
+            }
+        },
+
+        formatDateTime(dtStr) {
+            if (!dtStr) return '';
+            try {
+                const d = new Date(dtStr.replace(' ', 'T'));
+                return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            } catch (e) {
+                return dtStr;
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

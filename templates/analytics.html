@@ -1,0 +1,527 @@
+{% extends "base.html" %}
+
+{% block title %}Indicadores & Estatísticas - Pedidos Granodoc{% endblock %}
+
+{% block content %}
+<div x-data="analyticsApp()" x-init="initData()" class="space-y-6">
+
+    <!-- CABEÇALHO DA PÁGINA ANALÍTICA -->
+    <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 mb-2">
+                <a href="/admin" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition touch-btn">
+                    <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+                    <span>Voltar ao Painel de Compras</span>
+                </a>
+                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800">
+                    BI & Métricas
+                </span>
+            </div>
+            <h1 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
+                <i data-lucide="bar-chart-3" class="w-7 h-7 text-indigo-600 dark:text-indigo-400"></i>
+                <span>Indicadores & Estatísticas</span>
+            </h1>
+            <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                Métricas de quantidade, soma e médias, além do ranking dos insumos mais demandados por período.
+            </p>
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0">
+            <!-- Botão de Impressão -->
+            <button 
+                type="button" 
+                onclick="window.print()" 
+                class="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition touch-btn flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                title="Imprimir ou Salvar PDF"
+            >
+                <i data-lucide="printer" class="w-4 h-4"></i>
+                <span>Imprimir Relatório</span>
+            </button>
+            <!-- Botão Atualizar -->
+            <button 
+                type="button" 
+                @click="loadAnalytics()" 
+                :disabled="isLoading"
+                class="px-3.5 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold transition touch-btn flex items-center gap-1.5 shadow-md shadow-indigo-600/20"
+            >
+                <i data-lucide="refresh-cw" class="w-4 h-4" :class="isLoading ? 'animate-spin' : ''"></i>
+                <span>Atualizar</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- BARRA DE FILTROS INTERATIVA -->
+    <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 no-print">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            
+            <!-- Seleção do Tipo de Período -->
+            <div class="flex flex-wrap items-center gap-1.5">
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">Período:</span>
+                
+                <button 
+                    type="button" 
+                    @click="setPeriodType('month')" 
+                    :class="periodType === 'month' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold transition touch-btn flex items-center gap-1.5"
+                >
+                    <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+                    <span>Mês</span>
+                </button>
+
+                <button 
+                    type="button" 
+                    @click="setPeriodType('semester_1')" 
+                    :class="periodType === 'semester_1' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold transition touch-btn flex items-center gap-1.5"
+                >
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                    <span>1º Semestre (Jan - Jun)</span>
+                </button>
+
+                <button 
+                    type="button" 
+                    @click="setPeriodType('semester_2')" 
+                    :class="periodType === 'semester_2' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold transition touch-btn flex items-center gap-1.5"
+                >
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                    <span>2º Semestre (Jul - Dez)</span>
+                </button>
+
+                <button 
+                    type="button" 
+                    @click="setPeriodType('year')" 
+                    :class="periodType === 'year' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold transition touch-btn flex items-center gap-1.5"
+                >
+                    <i data-lucide="calendar-range" class="w-3.5 h-3.5"></i>
+                    <span>Ano Inteiro</span>
+                </button>
+            </div>
+
+            <!-- Seletores de Mês e Ano -->
+            <div class="flex items-center gap-2">
+                <!-- Seletor de Mês (apenas visível se periodType == 'month') -->
+                <div x-show="periodType === 'month'" class="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+                    <label class="font-bold text-slate-400">Mês:</label>
+                    <select x-model="selectedMonth" @change="loadAnalytics()" class="bg-transparent font-bold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer">
+                        <option value="1">Janeiro</option>
+                        <option value="2">Fevereiro</option>
+                        <option value="3">Março</option>
+                        <option value="4">Abril</option>
+                        <option value="5">Maio</option>
+                        <option value="6">Junho</option>
+                        <option value="7">Julho</option>
+                        <option value="8">Agosto</option>
+                        <option value="9">Setembro</option>
+                        <option value="10">Outubro</option>
+                        <option value="11">Novembro</option>
+                        <option value="12">Dezembro</option>
+                    </select>
+                </div>
+
+                <!-- Seletor de Ano -->
+                <div class="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+                    <label class="font-bold text-slate-400">Ano:</label>
+                    <select x-model="selectedYear" @change="loadAnalytics()" class="bg-transparent font-bold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer">
+                        <template x-for="y in availableYears" :key="y">
+                            <option :value="y" x-text="y"></option>
+                        </template>
+                    </select>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Filtro por Praça -->
+        <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">Filtrar Praça:</span>
+            
+            <button 
+                type="button" 
+                @click="setSectorFilter('todos')"
+                :class="selectedSector === 'todos' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200'"
+                class="px-3 py-1 rounded-xl text-xs font-bold transition touch-btn"
+            >
+                Todas as Praças
+            </button>
+            <button 
+                type="button" 
+                @click="setSectorFilter('Pizza')"
+                :class="selectedSector === 'Pizza' ? 'bg-amber-500 text-slate-950 font-black shadow-sm' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200'"
+                class="px-3 py-1 rounded-xl text-xs font-bold transition touch-btn flex items-center gap-1"
+            >
+                <span>🍕</span>
+                <span>Pizza</span>
+            </button>
+            <button 
+                type="button" 
+                @click="setSectorFilter('Cozinha')"
+                :class="selectedSector === 'Cozinha' ? 'bg-orange-500 text-white font-black shadow-sm' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200'"
+                class="px-3 py-1 rounded-xl text-xs font-bold transition touch-btn flex items-center gap-1"
+            >
+                <span>🍳</span>
+                <span>Cozinha</span>
+            </button>
+            <button 
+                type="button" 
+                @click="setSectorFilter('Bar')"
+                :class="selectedSector === 'Bar' ? 'bg-cyan-500 text-white font-black shadow-sm' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200'"
+                class="px-3 py-1 rounded-xl text-xs font-bold transition touch-btn flex items-center gap-1"
+            >
+                <span>🍸</span>
+                <span>Bar</span>
+            </button>
+            <button 
+                type="button" 
+                @click="setSectorFilter('Salão')"
+                :class="['Salão', 'Sommelier'].includes(selectedSector) ? 'bg-rose-500 text-white font-black shadow-sm' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200'"
+                class="px-3 py-1 rounded-xl text-xs font-bold transition touch-btn flex items-center gap-1"
+            >
+                <span>🍷</span>
+                <span>Salão</span>
+            </button>
+
+            <!-- Badge do Período Ativo -->
+            <div class="ml-auto hidden sm:flex items-center gap-1 text-xs text-slate-400">
+                <span>Período Ativo:</span>
+                <span class="font-bold text-slate-700 dark:text-slate-200" x-text="data.periodo?.label || ''"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- CARDS DE INDICADORES (KPIS) -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        
+        <!-- Card 1: Quantidade de Pedidos -->
+        <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between text-slate-400 mb-2">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Quantidade</span>
+                <div class="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center">
+                    <i data-lucide="clipboard-list" class="w-4 h-4"></i>
+                </div>
+            </div>
+            <div class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight" x-text="data.kpis?.total_pedidos || 0"></div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-1">
+                Total de Pedidos Realizados
+            </p>
+            <div class="mt-2 text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                <i data-lucide="check-circle-2" class="w-3 h-3"></i>
+                <span x-text="`${data.kpis?.taxa_atendimento || 0}% atendidos`"></span>
+            </div>
+        </div>
+
+        <!-- Card 2: Soma de Volumes -->
+        <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between text-slate-400 mb-2">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Soma Total</span>
+                <div class="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center">
+                    <i data-lucide="boxes" class="w-4 h-4"></i>
+                </div>
+            </div>
+            <div class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight" x-text="(data.kpis?.soma_total_itens || 0).toLocaleString('pt-BR')"></div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-1">
+                Volume Acumulado Solicitado
+            </p>
+            <div class="mt-2 text-[10px] text-slate-400 font-semibold flex items-center gap-1.5">
+                <span x-text="`Catálogo: ${(data.kpis?.soma_catalogo || 0).toLocaleString('pt-BR')}`"></span>
+                <span>&bull;</span>
+                <span x-text="`Avulsos: ${(data.kpis?.soma_avulsos || 0).toLocaleString('pt-BR')}`"></span>
+            </div>
+        </div>
+
+        <!-- Card 3: Média de Itens por Pedido -->
+        <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between text-slate-400 mb-2">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Média / Pedido</span>
+                <div class="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center">
+                    <i data-lucide="calculator" class="w-4 h-4"></i>
+                </div>
+            </div>
+            <div class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight" x-text="data.kpis?.media_itens_por_pedido || 0"></div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-1">
+                Volume Médio por Requisição
+            </p>
+            <div class="mt-2 text-[10px] text-slate-400 font-semibold">
+                Itens por envio de praça
+            </div>
+        </div>
+
+        <!-- Card 4: Média Diária -->
+        <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between text-slate-400 mb-2">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Média Diária</span>
+                <div class="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center">
+                    <i data-lucide="trending-up" class="w-4 h-4"></i>
+                </div>
+            </div>
+            <div class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight" x-text="data.kpis?.media_pedidos_por_dia || 0"></div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-1">
+                Pedidos / Dia em Atividade
+            </p>
+            <div class="mt-2 text-[10px] text-slate-400 font-semibold" x-text="`${data.kpis?.dias_ativos || 0} dias com pedidos`"></div>
+        </div>
+
+        <!-- Card 5: Status da Esteira -->
+        <div class="col-span-2 lg:col-span-1 bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between text-slate-400 mb-2">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</span>
+                <div class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center">
+                    <i data-lucide="pie-chart" class="w-4 h-4"></i>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+                <span class="px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-black text-xs" x-text="`${data.kpis?.pedidos_comprados || 0} comp.`"></span>
+                <span class="px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-black text-xs" x-text="`${data.kpis?.pedidos_aprovados || 0} aprov.`"></span>
+                <span class="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 font-black text-xs" x-text="`${data.kpis?.pedidos_pendentes || 0} pend.`"></span>
+            </div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-2">
+                Esteira de Compras no Período
+            </p>
+        </div>
+
+    </div>
+
+    <!-- CORPO PRINCIPAL: TOP 10 PRODUTOS E DISTRIBUIÇÃO -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- COLUNA ESQUERDA (7 COLS): TOP 10 PRODUTOS MAIS PEDIDOS -->
+        <div class="lg:col-span-7 bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 flex items-center justify-center">
+                        <i data-lucide="trophy" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                            Top 10 Produtos Mais Pedidos
+                        </h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">
+                            Ranking de insumos do catálogo com maior demanda acumulada
+                        </p>
+                    </div>
+                </div>
+
+                <span class="text-xs font-black uppercase text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 rounded-xl" x-text="`${data.top10_produtos?.length || 0} itens`"></span>
+            </div>
+
+            <!-- Lista do Ranking -->
+            <div class="space-y-3">
+                <template x-for="item in data.top10_produtos" :key="item.produto_id">
+                    <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 transition">
+                        
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex items-center gap-3">
+                                <!-- Posição (Medalha) -->
+                                <div class="w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-xs"
+                                     :class="{
+                                         'bg-amber-400 text-amber-950 ring-2 ring-amber-400/30': item.posicao === 1,
+                                         'bg-slate-300 text-slate-800 dark:bg-slate-600 dark:text-white': item.posicao === 2,
+                                         'bg-amber-700 text-amber-100': item.posicao === 3,
+                                         'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300': item.posicao > 3
+                                     }">
+                                    <span x-text="item.posicao === 1 ? '🥇' : (item.posicao === 2 ? '🥈' : (item.posicao === 3 ? '🥉' : '#' + item.posicao))"></span>
+                                </div>
+
+                                <div>
+                                    <h4 class="font-black text-slate-900 dark:text-white text-xs sm:text-sm" x-text="item.produto_nome"></h4>
+                                    <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300 uppercase" x-text="item.categoria || 'Geral'"></span>
+                                        <template x-for="s in item.setores_list" :key="s">
+                                            <span class="text-[9px] font-bold px-1.5 py-0.2 rounded-full border"
+                                                  :class="{
+                                                      'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300': s.toLowerCase() === 'pizza',
+                                                      'bg-orange-50 text-orange-800 border-orange-300 dark:bg-orange-950/40 dark:text-orange-300': s.toLowerCase() === 'cozinha',
+                                                      'bg-cyan-50 text-cyan-800 border-cyan-300 dark:bg-cyan-950/40 dark:text-cyan-300': s.toLowerCase() === 'bar',
+                                                      'bg-rose-50 text-rose-800 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300': ['salão', 'salao', 'sommelier'].includes(s.toLowerCase())
+                                                  }"
+                                                  x-text="s"></span>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Quantidade e Frequência -->
+                            <div class="text-right shrink-0">
+                                <div class="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                                    <span x-text="item.total_quantidade"></span>
+                                    <span class="text-xs uppercase font-bold text-slate-400 ml-0.5" x-text="item.unidade_medida"></span>
+                                </div>
+                                <div class="text-[10px] text-slate-400 font-semibold" x-text="`Em ${item.frequencia_pedidos} pedidos`"></div>
+                            </div>
+                        </div>
+
+                        <!-- Barra Visual de Distribuição Relativa -->
+                        <div class="mt-2.5 w-full bg-slate-200 dark:bg-slate-700/60 rounded-full h-1.5 overflow-hidden">
+                            <div class="bg-indigo-600 dark:bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
+                                 :style="`width: ${item.percentual_max || 5}%`"></div>
+                        </div>
+
+                    </div>
+                </template>
+
+                <!-- Estado Vazio -->
+                <div x-show="!data.top10_produtos || data.top10_produtos.length === 0" class="py-12 text-center text-slate-400 text-xs">
+                    <i data-lucide="package-search" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                    <p>Nenhum produto requisitado no período selecionado.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- COLUNA DIREITA (5 COLS): DISTRIBUIÇÃO POR PRAÇA & ITENS AVULSOS -->
+        <div class="lg:col-span-5 space-y-6">
+            
+            <!-- Card 1: Distribuição de Demanda por Praça -->
+            <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div class="flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <div class="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center">
+                        <i data-lucide="layout-grid" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-black text-slate-900 dark:text-white">Demanda por Praça</h3>
+                        <p class="text-[11px] text-slate-400">Participação percentual de cada área</p>
+                    </div>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                    <template x-for="sec in data.distribuicao_setores" :key="sec.nome_setor">
+                        <div class="space-y-1">
+                            <div class="flex items-center justify-between font-bold">
+                                <span class="flex items-center gap-1.5 text-slate-800 dark:text-slate-200">
+                                    <span x-text="sec.nome_setor === 'Pizza' ? '🍕' : (sec.nome_setor === 'Cozinha' ? '🍳' : (sec.nome_setor === 'Bar' ? '🍸' : '🍷'))"></span>
+                                    <span x-text="sec.nome_setor"></span>
+                                </span>
+                                <span class="text-slate-500 dark:text-slate-400">
+                                    <span class="font-black text-slate-900 dark:text-white" x-text="sec.total_pedidos"></span> pedidos 
+                                    (<span x-text="`${sec.percentual_pedidos}%`"></span>)
+                                </span>
+                            </div>
+                            <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
+                                <div class="h-2 rounded-full transition-all duration-500"
+                                     :class="{
+                                         'bg-amber-500': sec.nome_setor === 'Pizza',
+                                         'bg-orange-500': sec.nome_setor === 'Cozinha',
+                                         'bg-cyan-500': sec.nome_setor === 'Bar',
+                                         'bg-rose-500': ['Salão', 'Sommelier'].includes(sec.nome_setor)
+                                     }"
+                                     :style="`width: ${sec.percentual_pedidos || 0}%`"></div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Card 2: Top 5 Itens Avulsos (Fora de Catálogo) -->
+            <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 flex items-center justify-center">
+                            <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-black text-slate-900 dark:text-white">Itens Fora de Catálogo</h3>
+                            <p class="text-[11px] text-slate-400">Mais solicitados como "itens extras"</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-2.5 text-xs">
+                    <template x-for="av in data.top_avulsos" :key="av.descricao_item">
+                        <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <div>
+                                <h5 class="font-bold text-slate-800 dark:text-slate-200" x-text="av.descricao_item"></h5>
+                                <span class="text-[10px] text-slate-400 font-semibold" x-text="`Praça(s): ${av.setores_solicitantes}`"></span>
+                            </div>
+                            <div class="text-right">
+                                <span class="font-black text-slate-900 dark:text-white" x-text="av.total_quantidade"></span>
+                                <span class="text-[10px] uppercase font-bold text-slate-400" x-text="av.unidade_medida"></span>
+                                <div class="text-[9px] text-slate-400" x-text="`${av.frequencia_pedidos}x pedido`"></div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div x-show="!data.top_avulsos || data.top_avulsos.length === 0" class="p-4 text-center text-slate-400 text-xs">
+                        Nenhum item avulso solicitado no período.
+                    </div>
+                </div>
+
+                <div class="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                    💡 <strong>Dica de Gestão:</strong> Insumos com alta recorrência aqui devem ser adicionados como fixos no catálogo na Aba 4 do Painel Master.
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function analyticsApp() {
+    return {
+        periodType: 'month',
+        selectedYear: new Date().getFullYear(),
+        selectedMonth: new Date().getMonth() + 1,
+        selectedSector: 'todos',
+        availableYears: [2026, 2025, 2024],
+        data: {
+            periodo: {},
+            kpis: {},
+            top10_produtos: [],
+            distribuicao_setores: [],
+            top_avulsos: [],
+            timeline: []
+        },
+        isLoading: false,
+
+        async initData() {
+            const curYear = new Date().getFullYear();
+            if (!this.availableYears.includes(curYear)) {
+                this.availableYears.unshift(curYear);
+            }
+            await this.loadAnalytics();
+        },
+
+        setPeriodType(type) {
+            this.periodType = type;
+            this.loadAnalytics();
+        },
+
+        setSectorFilter(sec) {
+            this.selectedSector = sec;
+            this.loadAnalytics();
+        },
+
+        async loadAnalytics() {
+            this.isLoading = true;
+            try {
+                let url = `/api/admin/analytics?period_type=${this.periodType}&year=${this.selectedYear}`;
+                if (this.periodType === 'month') {
+                    url += `&month=${this.selectedMonth}`;
+                }
+                if (this.selectedSector && this.selectedSector !== 'todos') {
+                    url += `&sector=${this.selectedSector}`;
+                }
+
+                const res = await fetch(url);
+                if (res.ok) {
+                    this.data = await res.json();
+                    this.$nextTick(() => {
+                        if (window.lucide) lucide.createIcons();
+                    });
+                } else {
+                    showToast('Erro ao carregar indicadores analíticos.', 'error');
+                }
+            } catch (err) {
+                console.error('Erro ao buscar dados analíticos:', err);
+                showToast('Erro de conexão com o servidor.', 'error');
+            } finally {
+                this.isLoading = false;
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

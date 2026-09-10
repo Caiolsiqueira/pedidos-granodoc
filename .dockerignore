@@ -1,0 +1,21 @@
+# Arquivos e diretórios ignorados pelo build do Docker
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+env
+ENV
+.git
+.gitignore
+.dockerignore
+.vscode
+.idea
+*.db-journal
+iniciar_sistema.bat
+tests
+test_*.py
+scratch
+*.log
+.system_generated

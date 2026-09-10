@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: pedidos-granodoc
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /login
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: GRANODOC_DB_PATH
+        value: /app/data/pedidos_granodoc.db
+    disk:
+      name: granodoc-data
+      mountPath: /app/data
+      sizeGB: 1

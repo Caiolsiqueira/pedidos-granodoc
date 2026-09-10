@@ -1,0 +1,2405 @@
+{% extends "base.html" %}
+
+{% block title %}Painel Master - Pedidos Granodoc{% endblock %}
+
+{% block content %}
+<div x-data="adminApp()" x-init="initData()" class="space-y-6">
+
+    <!-- CABEÇALHO DO PAINEL MASTER -->
+    <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 mb-1">
+                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800">
+                    Administração Geral
+                </span>
+                <span class="text-xs text-slate-400">&bull;</span>
+                <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Acesso Master (PIN 9999)</span>
+            </div>
+            <h1 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Painel de Compras & Suprimentos</h1>
+            <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">Consolidação unificada de pedidos de todas as praças para cotação com fornecedores</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+            <!-- Botão para Indicadores & Estatísticas -->
+            <a 
+                href="/analytics" 
+                class="px-3.5 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md shadow-indigo-600/25 transition touch-btn flex items-center gap-2"
+                title="Abrir Painel de Indicadores & Estatísticas"
+            >
+                <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+                <span>Indicadores & Estatísticas</span>
+            </a>
+
+            <!-- Seletor de Data & Atalhos -->
+            <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/80 p-2 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <i data-lucide="calendar" class="w-4 h-4 text-slate-400 ml-1"></i>
+                <input 
+                    type="date" 
+                    x-model="selectedDate" 
+                    @change="onDateChanged()"
+                    class="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                >
+                <div class="flex items-center gap-1 border-l border-slate-200 dark:border-slate-700 pl-2">
+                    <button 
+                        type="button" 
+                        @click="setDateToday()" 
+                        :class="isDateToday ? 'bg-granodoc-600 text-white font-bold' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200'"
+                        class="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition touch-btn"
+                    >
+                        Hoje
+                    </button>
+                    <button 
+                        type="button" 
+                        @click="setDateYesterday()" 
+                        :class="isDateYesterday ? 'bg-granodoc-600 text-white font-bold' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200'"
+                        class="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition touch-btn"
+                    >
+                        Ontem
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NAVEGAÇÃO POR ABAS -->
+    <div class="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3 overflow-x-auto no-scrollbar">
+        <!-- Aba 1: Pedidos por Data -->
+        <button 
+            type="button" 
+            @click="activeTab = 'daily'"
+            :class="activeTab === 'daily' 
+                ? 'bg-granodoc-600 text-white shadow-md' 
+                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'"
+            class="px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition touch-btn shrink-0"
+        >
+            <i data-lucide="clipboard-list" class="w-4 h-4"></i>
+            <span>Aba 1: Pedidos por Data (Visão Diária)</span>
+            <span class="px-1.5 py-0.2 rounded-full bg-black/20 text-[10px]" x-text="dailyOrders.length"></span>
+        </button>
+
+        <!-- Aba 2: Lista Consolidada -->
+        <button 
+            type="button" 
+            @click="activeTab = 'consolidated'"
+            :class="activeTab === 'consolidated' 
+                ? 'bg-granodoc-600 text-white shadow-md' 
+                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'"
+            class="px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition touch-btn shrink-0"
+        >
+            <i data-lucide="layers" class="w-4 h-4"></i>
+            <span>Aba 2: Lista Consolidada de Compras</span>
+            <span class="px-1.5 py-0.2 rounded-full bg-black/20 text-[10px]" x-text="(consolidatedData.catalogo ? consolidatedData.catalogo.length : 0) + (consolidatedData.avulsos ? consolidatedData.avulsos.length : 0)"></span>
+        </button>
+
+        <!-- Aba 3: Modo Auditoria -->
+        <button 
+            type="button" 
+            @click="activeTab = 'audit'"
+            :class="activeTab === 'audit' 
+                ? 'bg-granodoc-600 text-white shadow-md' 
+                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'"
+            class="px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition touch-btn shrink-0"
+        >
+            <i data-lucide="eye" class="w-4 h-4 text-amber-400"></i>
+            <span>Aba 3: Modo Auditoria / Visão de Praça</span>
+        </button>
+
+        <!-- Aba 4: Gestão do Catálogo -->
+        <button 
+            type="button" 
+            @click="activeTab = 'catalog'"
+            :class="activeTab === 'catalog' 
+                ? 'bg-granodoc-600 text-white shadow-md' 
+                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'"
+            class="px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition touch-btn shrink-0"
+        >
+            <i data-lucide="settings" class="w-4 h-4"></i>
+            <span>Aba 4: Gestão do Catálogo</span>
+        </button>
+
+        <!-- Aba 5: Pedidos Concluídos -->
+        <button 
+            type="button" 
+            @click="activeTab = 'completed'; loadCompletedOrders()"
+            :class="activeTab === 'completed' 
+                ? 'bg-emerald-600 text-white shadow-md' 
+                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'"
+            class="px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition touch-btn shrink-0"
+        >
+            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+            <span>Aba 5: Pedidos Concluídos</span>
+            <span class="px-1.5 py-0.2 rounded-full bg-black/20 text-[10px]" x-text="completedOrders.length"></span>
+        </button>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- ABA 1: PEDIDOS POR DATA (VISÃO DIÁRIA) -->
+    <!-- ========================================================================= -->
+    <div x-show="activeTab === 'daily'" class="space-y-6">
+
+        <!-- CARDS DE MÉTRICAS RÁPIDAS -->
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
+            <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Pedidos</p>
+                <p class="text-2xl font-black text-slate-900 dark:text-white mt-1" x-text="dailyStats.total_pedidos || 0"></p>
+            </div>
+            <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-amber-200 dark:border-amber-900/40 shadow-sm">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-amber-500">Pendentes</p>
+                <p class="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1" x-text="dailyStats.total_pendentes || 0"></p>
+            </div>
+            <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-sky-200 dark:border-sky-900/40 shadow-sm">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-sky-500">Aprovados</p>
+                <p class="text-2xl font-black text-sky-600 dark:text-sky-400 mt-1" x-text="dailyStats.total_aprovados || 0"></p>
+            </div>
+            <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900/40 shadow-sm">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-500">Comprados</p>
+                <p class="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1" x-text="dailyStats.total_comprados || 0"></p>
+            </div>
+            <div class="col-span-2 sm:col-span-1 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Praças Ativas</p>
+                <p class="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1" x-text="dailyStats.total_setores_ativos || 0"></p>
+            </div>
+        </div>
+
+        <!-- FILTROS DE PRAÇA E STATUS -->
+        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+            <!-- Filtro por Setor -->
+            <div class="flex items-center gap-1 overflow-x-auto w-full sm:w-auto text-xs pb-1 sm:pb-0">
+                <span class="text-slate-400 font-bold mr-1 shrink-0">Praça:</span>
+                <button 
+                    type="button" 
+                    @click="filterSector = 'todos'"
+                    :class="filterSector === 'todos' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold"
+                >Todos</button>
+                <button 
+                    type="button" 
+                    @click="filterSector = 'Pizza'"
+                    :class="filterSector === 'Pizza' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold"
+                >🍕 Pizza</button>
+                <button 
+                    type="button" 
+                    @click="filterSector = 'Cozinha'"
+                    :class="filterSector === 'Cozinha' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold"
+                >🍳 Cozinha</button>
+                <button 
+                    type="button" 
+                    @click="filterSector = 'Bar'"
+                    :class="filterSector === 'Bar' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold"
+                >🍸 Bar</button>
+                <button 
+                    type="button" 
+                    @click="filterSector = 'Salão'"
+                    :class="filterSector === 'Salão' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold"
+                >🍷 Salão</button>
+            </div>
+
+            <!-- Controles à Direita: Filtro por Status & Exportação Geral em PDF -->
+            <div class="flex items-center gap-2.5 w-full sm:w-auto justify-end flex-wrap">
+                <div class="flex items-center gap-1.5 text-xs">
+                    <span class="text-slate-400 font-bold mr-1 shrink-0">Status:</span>
+                    <select 
+                        x-model="filterStatus"
+                        class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
+                    >
+                        <option value="todos">Todos os Ativos</option>
+                        <option value="Pendente">Apenas Pendentes</option>
+                        <option value="Aprovado">Apenas Aprovados</option>
+                    </select>
+                </div>
+
+                <!-- Botão Exportar Todos em PDF (Por Praça) -->
+                <a 
+                    :href="dailyOrders.length > 0 ? ('/api/admin/orders/pdf?date=' + selectedDate) : 'javascript:void(0)'"
+                    @click="if (dailyOrders.length === 0) showToast('Sem pedidos registrados para exportar nesta data.', 'warning');"
+                    :class="dailyOrders.length > 0 
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/25 active:scale-98 cursor-pointer' 
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200 dark:border-slate-700'"
+                    target="_blank"
+                    class="px-3.5 py-1.5 rounded-xl text-xs font-black transition touch-btn flex items-center gap-1.5 shrink-0"
+                    title="Exportar todos os pedidos do dia separados por praça em um único documento PDF"
+                >
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    <span>Exportar Todos em PDF (Por Praça)</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- LISTA DE CARDS DE PEDIDOS DIÁRIOS -->
+        <div class="space-y-4">
+            <template x-for="order in filteredDailyOrders" :key="order.id">
+                <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm transition hover:shadow-md space-y-4">
+                    
+                    <!-- Topo do Card: Setor, Hora e Status -->
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                        <div class="flex items-center gap-3">
+                            <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-slate-800 to-slate-700 text-white flex items-center justify-center text-xl shadow">
+                                <span x-text="getSectorEmoji(order.nome_setor)"></span>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h3 class="text-base font-black text-slate-900 dark:text-white" x-text="'Praça ' + order.nome_setor"></h3>
+                                    <span class="text-xs font-black text-slate-400" x-text="'#PED-' + order.id"></span>
+                                    <!-- Badge Visual de Status -->
+                                    <span 
+                                        :class="{
+                                            'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800': order.status === 'Pendente',
+                                            'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800': order.status === 'Aprovado',
+                                            'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800': order.status === 'Comprado'
+                                        }"
+                                        class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-xs transition-colors duration-200"
+                                        x-text="order.status"
+                                    ></span>
+                                </div>
+                                <p class="text-xs text-slate-500 font-medium" x-text="formatTime(order.data_hora)"></p>
+                            </div>
+                        </div>
+
+                        <!-- Ações Rápidas do Card: Exportar PDF e Alterar Status -->
+                        <div class="flex flex-wrap items-center gap-2.5 self-end sm:self-auto">
+                            <!-- Botão Exportar PDF Individual da Praça -->
+                            <a 
+                                :href="'/api/admin/orders/pdf?date=' + selectedDate + '&sector=' + encodeURIComponent(order.nome_setor)" 
+                                target="_blank"
+                                class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition touch-btn border border-slate-200 dark:border-slate-700 shadow-sm"
+                                title="Baixar PDF de conferência desta praça"
+                            >
+                                <svg class="w-3.5 h-3.5 text-granodoc-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
+                                <span>Exportar PDF</span>
+                            </a>
+
+                            <!-- Seletor Rápido de Status (Pendente -> Aprovado -> Comprado) -->
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-[11px] font-bold text-slate-400 hidden md:inline">Status:</span>
+                                <div class="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    <button 
+                                        type="button" 
+                                        @click="changeStatus(order.id, 'Pendente')"
+                                        :disabled="order.status === 'Pendente'"
+                                        :class="order.status === 'Pendente' ? 'bg-amber-500 text-slate-950 font-black shadow-sm cursor-default' : 'text-slate-600 dark:text-slate-400 hover:text-amber-500 cursor-pointer'"
+                                        class="px-2.5 py-1 rounded-lg text-[11px] font-bold transition touch-btn"
+                                    >
+                                        Pendente
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        @click="changeStatus(order.id, 'Aprovado')"
+                                        :disabled="order.status === 'Aprovado'"
+                                        :class="order.status === 'Aprovado' ? 'bg-sky-500 text-white font-black shadow-sm cursor-default' : 'text-slate-600 dark:text-slate-400 hover:text-sky-500 cursor-pointer'"
+                                        class="px-2.5 py-1 rounded-lg text-[11px] font-bold transition touch-btn"
+                                    >
+                                        Aprovado
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        @click="changeStatus(order.id, 'Comprado')"
+                                        :disabled="order.status === 'Comprado'"
+                                        :class="order.status === 'Comprado' ? 'bg-emerald-500 text-white font-black shadow-sm cursor-default' : 'text-slate-600 dark:text-slate-400 hover:text-emerald-500 cursor-pointer'"
+                                        class="px-2.5 py-1 rounded-lg text-[11px] font-bold transition touch-btn"
+                                    >
+                                        Comprado
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Conteúdo do Pedido: Catálogo e Avulsos -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <!-- Itens do Catálogo -->
+                        <div class="space-y-1.5">
+                            <p class="font-bold uppercase tracking-wider text-slate-400 text-[10px] flex items-center gap-1">
+                                <i data-lucide="package" class="w-3 h-3 text-granodoc-500"></i>
+                                <span>Itens de Catálogo:</span>
+                            </p>
+                            <template x-for="item in order.itens_catalogo" :key="'cat-' + item.id">
+                                <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                                    <span class="font-semibold text-slate-800 dark:text-slate-200" x-text="item.nome_produto"></span>
+                                    <span class="font-black text-slate-900 dark:text-white px-2 py-0.5 rounded bg-white dark:bg-slate-700 shadow-sm" x-text="item.quantidade_pedida + ' ' + item.unidade_medida"></span>
+                                </div>
+                            </template>
+                            <div x-show="!order.itens_catalogo || order.itens_catalogo.length === 0" class="text-slate-400 italic text-[11px]">
+                                Nenhum item de catálogo neste pedido.
+                            </div>
+                        </div>
+
+                        <!-- Itens Avulsos & Observações -->
+                        <div class="space-y-2">
+                            <div>
+                                <p class="font-bold uppercase tracking-wider text-amber-500 text-[10px] flex items-center gap-1">
+                                    <i data-lucide="sparkles" class="w-3 h-3 text-amber-500"></i>
+                                    <span>Itens Avulsos / Extras:</span>
+                                </p>
+                                <div class="space-y-1.5 mt-1">
+                                    <template x-for="av in order.itens_avulsos" :key="'av-' + av.id">
+                                        <div class="flex items-center justify-between p-2 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/30 text-amber-900 dark:text-amber-200">
+                                            <span class="font-bold" x-text="'✨ ' + av.descricao_item"></span>
+                                            <span class="font-black px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-100" x-text="av.quantidade + ' ' + av.unidade_medida"></span>
+                                        </div>
+                                    </template>
+                                    <div x-show="!order.itens_avulsos || order.itens_avulsos.length === 0" class="text-slate-400 italic text-[11px]">
+                                        Nenhum item avulso neste pedido.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Observações -->
+                            <div x-show="order.observacoes" class="p-2.5 rounded-xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 text-[11px]">
+                                <span class="font-bold text-slate-700 dark:text-slate-300">Nota do Operador:</span>
+                                <span class="text-slate-600 dark:text-slate-400 italic ml-1" x-text="order.observacoes"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </template>
+
+            <!-- Sem Pedidos no Dia -->
+            <div x-show="filteredDailyOrders.length === 0" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
+                <i data-lucide="calendar-x" class="w-12 h-12 text-slate-400 mx-auto mb-3 opacity-60"></i>
+                <h3 class="text-base font-black text-slate-800 dark:text-slate-200">Nenhum pedido encontrado nesta data</h3>
+                <p class="text-xs text-slate-500 mt-1">Selecione outra data no calendário ou alterne os filtros de praça/status.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- ABA 2: LISTA CONSOLIDADA DE COMPRAS (ORDEM UNIFICADA) -->
+    <!-- ========================================================================= -->
+    <div x-show="activeTab === 'consolidated'" class="space-y-6">
+
+        <!-- CABEÇALHO DA CONSOLIDAÇÃO & BOTÕES DE EXPORTAÇÃO -->
+        <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+                <h2 class="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="layers" class="w-5 h-5 text-granodoc-600"></i>
+                    <span>Ordem Consolidada de Compras</span>
+                </h2>
+                <p class="text-xs text-slate-500 mt-0.5">
+                    Volumes somados em tempo real de todas as praças para a data <strong x-text="formatDateBR(selectedDate)"></strong>
+                </p>
+            </div>
+
+            <!-- Botões de Ação de Exportação -->
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <!-- Copiar para WhatsApp -->
+                <button 
+                    type="button" 
+                    @click="copyWhatsAppList()"
+                    :disabled="isCopyingWhatsApp"
+                    :class="copiedWhatsApp ? 'bg-emerald-700 ring-2 ring-emerald-300 shadow-emerald-700/50' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30'"
+                    class="px-4 py-2.5 rounded-2xl active:scale-98 text-white text-xs font-black flex items-center gap-2 shadow-lg transition touch-btn select-none"
+                    title="Copiar lista consolidada formatada para o WhatsApp"
+                >
+                    <svg x-show="!copiedWhatsApp" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
+                    </svg>
+                    <svg x-show="copiedWhatsApp" x-cloak class="w-4 h-4 text-emerald-200 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    <span x-text="copiedWhatsApp ? 'Copiado com Sucesso!' : 'Copiar Lista para WhatsApp'"></span>
+                </button>
+
+                <!-- Baixar PDF ReportLab -->
+                <a 
+                    :href="'/api/admin/consolidated/pdf?date=' + selectedDate" 
+                    target="_blank"
+                    class="px-4 py-2.5 rounded-2xl bg-sky-600 hover:bg-sky-700 active:scale-98 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-sky-600/30 transition touch-btn"
+                >
+                    <i data-lucide="download" class="w-4 h-4"></i>
+                    <span>Exportar para PDF</span>
+                </a>
+
+                <!-- Imprimir na Tela -->
+                <button 
+                    type="button" 
+                    onclick="window.print()"
+                    class="px-3 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition touch-btn border border-slate-200 dark:border-slate-700"
+                >
+                    <i data-lucide="printer" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- BARRA DE GESTÃO DE STATUS CONSOLIDADO DO DIA (ABA 2) -->
+        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <span class="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-granodoc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+                    </svg>
+                    <span>Status do Dia (<strong x-text="formatDateBR(selectedDate)"></strong>):</span>
+                </span>
+                <div class="flex items-center gap-1.5 text-xs">
+                    <span class="px-2.5 py-0.5 rounded-full font-black bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800" x-text="(dailyStats.total_pendentes || 0) + ' Pendentes'"></span>
+                    <span class="px-2.5 py-0.5 rounded-full font-black bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800" x-text="(dailyStats.total_aprovados || 0) + ' Aprovados'"></span>
+                    <span class="px-2.5 py-0.5 rounded-full font-black bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800" x-text="(dailyStats.total_comprados || 0) + ' Comprados'"></span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
+                <span class="text-xs font-bold text-slate-400 hidden sm:inline">Ações em Lote:</span>
+
+                <!-- Botão Aprovar Todos -->
+                <button 
+                    type="button" 
+                    @click="changeAllStatusForDate('Aprovado')"
+                    :disabled="dailyOrders.length === 0"
+                    :class="dailyOrders.length > 0 ? 'bg-sky-600 hover:bg-sky-700 text-white shadow-md shadow-sky-600/20 active:scale-98 cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'"
+                    class="px-3.5 py-2 rounded-xl text-xs font-black transition touch-btn flex items-center gap-1.5"
+                    title="Aprovar todos os pedidos ativos do dia selecionado"
+                >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    <span>Aprovar Todos</span>
+                </button>
+
+                <!-- Botão Marcar como Comprado -->
+                <button 
+                    type="button" 
+                    @click="changeAllStatusForDate('Comprado')"
+                    :disabled="dailyOrders.length === 0"
+                    :class="dailyOrders.length > 0 ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 active:scale-98 cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'"
+                    class="px-3.5 py-2 rounded-xl text-xs font-black transition touch-btn flex items-center gap-1.5"
+                    title="Marcar todos os pedidos do dia como Comprados"
+                >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
+                    </svg>
+                    <span>Marcar como Comprado</span>
+                </button>
+
+                <!-- Botão Reverter para Pendente -->
+                <button 
+                    type="button" 
+                    @click="changeAllStatusForDate('Pendente')"
+                    :disabled="dailyOrders.length === 0"
+                    :class="dailyOrders.length > 0 ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 active:scale-98 cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'"
+                    class="px-2.5 py-2 rounded-xl text-xs font-bold transition touch-btn flex items-center gap-1"
+                    title="Reverter status de todos os pedidos do dia para Pendente"
+                >
+                    <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                    <span>Pendente</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 1. TABELA DE PRODUTOS DE CATÁLOGO CONSOLIDADOS -->
+        <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div>
+                    <h3 class="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <i data-lucide="package-check" class="w-4 h-4 text-emerald-500"></i>
+                        <span>Insumos Oficiais do Catálogo</span>
+                    </h3>
+                    <p class="text-xs text-slate-500">Quantidades somadas por produto</p>
+                </div>
+                <span class="px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-black text-xs" x-text="(consolidatedData.catalogo ? consolidatedData.catalogo.length : 0) + ' produtos'"></span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200 dark:border-slate-800">
+                        <tr>
+                            <th class="py-3 px-4">Produto</th>
+                            <th class="py-3 px-4">Categoria</th>
+                            <th class="py-3 px-4 text-center">Qtd Total</th>
+                            <th class="py-3 px-4">Unidade</th>
+                            <th class="py-3 px-4">Praças Solicitantes</th>
+                            <th class="py-3 px-4 text-center">Pedidos</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800/80">
+                        <template x-for="item in consolidatedData.catalogo" :key="item.produto_id">
+                            <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
+                                <td class="py-3.5 px-4 font-bold text-slate-900 dark:text-white" x-text="item.produto_nome"></td>
+                                <td class="py-3.5 px-4 text-slate-500" x-text="item.categoria || 'Geral'"></td>
+                                <td class="py-3.5 px-4 text-center font-black text-sm text-granodoc-600 dark:text-granodoc-400" x-text="formatQty(item.quantidade_total)"></td>
+                                <td class="py-3.5 px-4 font-extrabold uppercase text-[11px] text-slate-600 dark:text-slate-400" x-text="item.unidade_medida"></td>
+                                <td class="py-3.5 px-4">
+                                    <span class="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[11px]" x-text="item.setores_solicitantes"></span>
+                                </td>
+                                <td class="py-3.5 px-4 text-center text-slate-500 font-medium" x-text="item.total_pedidos_item"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
+                <div x-show="!consolidatedData.catalogo || consolidatedData.catalogo.length === 0" class="text-center py-12 text-slate-400">
+                    <p class="text-sm font-semibold">Nenhum insumo de catálogo solicitado para esta data.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. SEÇÃO SEPARADA PARA ITENS AVULSOS / EXTRAS -->
+        <div class="bg-white dark:bg-slate-900 rounded-3xl border border-amber-200 dark:border-amber-900/40 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-amber-100 dark:border-amber-900/30 bg-amber-50/40 dark:bg-amber-950/20 flex items-center justify-between">
+                <div>
+                    <h3 class="text-sm font-black text-amber-900 dark:text-amber-200 flex items-center gap-2">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
+                        <span>Itens Avulsos & Requisições Especiais</span>
+                    </h3>
+                    <p class="text-xs text-amber-700/80 dark:text-amber-400/80">Insumos solicitados fora do catálogo oficial</p>
+                </div>
+                <span class="px-3 py-1 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 font-black text-xs" x-text="(consolidatedData.avulsos ? consolidatedData.avulsos.length : 0) + ' avulsos'"></span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-amber-50/80 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 font-bold uppercase tracking-wider text-[10px] border-b border-amber-100 dark:border-amber-900/40">
+                        <tr>
+                            <th class="py-3 px-4">Descrição do Item</th>
+                            <th class="py-3 px-4 text-center">Qtd Total</th>
+                            <th class="py-3 px-4">Unidade</th>
+                            <th class="py-3 px-4">Praças Solicitantes</th>
+                            <th class="py-3 px-4">Observações</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-amber-100/60 dark:divide-amber-900/20">
+                        <template x-for="av in consolidatedData.avulsos" :key="av.descricao_item">
+                            <tr class="hover:bg-amber-50/40 dark:hover:bg-amber-950/10 transition">
+                                <td class="py-3.5 px-4 font-bold text-slate-900 dark:text-white" x-text="av.descricao_item"></td>
+                                <td class="py-3.5 px-4 text-center font-black text-sm text-amber-600 dark:text-amber-400" x-text="formatQty(av.quantidade_total)"></td>
+                                <td class="py-3.5 px-4 font-extrabold uppercase text-[11px] text-slate-600 dark:text-slate-400" x-text="av.unidade_medida"></td>
+                                <td class="py-3.5 px-4">
+                                    <span class="px-2 py-0.5 rounded-md bg-amber-100/80 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 font-bold text-[11px]" x-text="av.setores_solicitantes"></span>
+                                </td>
+                                <td class="py-3.5 px-4 text-slate-500 italic" x-text="av.notas_relevantes || '-'"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
+                <div x-show="!consolidatedData.avulsos || consolidatedData.avulsos.length === 0" class="text-center py-10 text-slate-400">
+                    <p class="text-sm font-semibold">Nenhum item avulso solicitado para esta data.</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- ABA 3: MODO AUDITORIA / VISÃO DE PRAÇA -->
+    <!-- ========================================================================= -->
+    <div x-show="activeTab === 'audit'" class="space-y-6">
+        <div class="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm max-w-2xl mx-auto text-center space-y-6">
+            <div class="w-16 h-16 rounded-3xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center text-3xl mx-auto shadow-md">
+                <i data-lucide="eye" class="w-8 h-8"></i>
+            </div>
+            <div>
+                <h2 class="text-2xl font-black text-slate-900 dark:text-white">Modo Auditoria de Praça</h2>
+                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Inspecione o sistema exatamente como qualquer operador enxerga sua bancada de trabalho, mantendo seus privilégios master para retornar a qualquer momento.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <button 
+                    type="button" 
+                    @click="enterAuditMode('Pizza')" 
+                    class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-granodoc-500 bg-slate-50 dark:bg-slate-800/60 flex flex-col items-center gap-2 touch-btn"
+                >
+                    <span class="text-3xl">🍕</span>
+                    <span class="text-xs font-bold text-slate-800 dark:text-slate-200">Pizzaiolo</span>
+                </button>
+                <button 
+                    type="button" 
+                    @click="enterAuditMode('Cozinha')" 
+                    class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-granodoc-500 bg-slate-50 dark:bg-slate-800/60 flex flex-col items-center gap-2 touch-btn"
+                >
+                    <span class="text-3xl">🍳</span>
+                    <span class="text-xs font-bold text-slate-800 dark:text-slate-200">Cozinha</span>
+                </button>
+                <button 
+                    type="button" 
+                    @click="enterAuditMode('Bar')" 
+                    class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-granodoc-500 bg-slate-50 dark:bg-slate-800/60 flex flex-col items-center gap-2 touch-btn"
+                >
+                    <span class="text-3xl">🍸</span>
+                    <span class="text-xs font-bold text-slate-800 dark:text-slate-200">Barman</span>
+                </button>
+                <button 
+                    type="button" 
+                    @click="enterAuditMode('Salão')" 
+                    class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-granodoc-500 bg-slate-50 dark:bg-slate-800/60 flex flex-col items-center gap-2 touch-btn"
+                >
+                    <span class="text-3xl">🍷</span>
+                    <span class="text-xs font-bold text-slate-800 dark:text-slate-200">Salão</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- ABA 4: GESTÃO DO CATÁLOGO DE PRODUTOS & CATEGORIAS -->
+    <!-- ========================================================================= -->
+    <div x-show="activeTab === 'catalog'" class="space-y-6">
+
+        <!-- SUB-ABAS DA GESTÃO DE CATÁLOGO -->
+        <div class="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                <button 
+                    type="button" 
+                    @click="adminCatalogTab = 'list'"
+                    :class="adminCatalogTab === 'list' ? 'bg-granodoc-600 text-white font-black shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold'"
+                    class="px-3.5 py-2 rounded-2xl text-xs flex items-center gap-1.5 transition touch-btn shrink-0"
+                >
+                    <i data-lucide="list" class="w-3.5 h-3.5"></i>
+                    <span>Insumos Cadastrados (<span x-text="catalogProducts.length"></span>)</span>
+                </button>
+
+                <button 
+                    type="button" 
+                    @click="adminCatalogTab = 'single'"
+                    :class="adminCatalogTab === 'single' ? 'bg-granodoc-600 text-white font-black shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold'"
+                    class="px-3.5 py-2 rounded-2xl text-xs flex items-center gap-1.5 transition touch-btn shrink-0"
+                >
+                    <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+                    <span>+ Novo Insumo</span>
+                </button>
+
+                <button 
+                    type="button" 
+                    @click="adminCatalogTab = 'categories'"
+                    :class="adminCatalogTab === 'categories' ? 'bg-granodoc-600 text-white font-black shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold'"
+                    class="px-3.5 py-2 rounded-2xl text-xs flex items-center gap-1.5 transition touch-btn shrink-0"
+                >
+                    <i data-lucide="tags" class="w-3.5 h-3.5"></i>
+                    <span>Categorias por Praça</span>
+                </button>
+
+                <button 
+                    type="button" 
+                    @click="adminCatalogTab = 'batch'"
+                    :class="adminCatalogTab === 'batch' ? 'bg-amber-500 text-slate-950 font-black shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold'"
+                    class="px-3.5 py-2 rounded-2xl text-xs flex items-center gap-1.5 transition touch-btn shrink-0"
+                >
+                    <i data-lucide="file-plus" class="w-3.5 h-3.5"></i>
+                    <span>⚡ Cadastro em Lote</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 1. SUB-ABA: LISTA DE PRODUTOS CADASTRADOS -->
+        <div x-show="adminCatalogTab === 'list'" class="space-y-4">
+            <!-- Filtros: Setor e Busca -->
+            <div class="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div class="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto text-xs pb-1 sm:pb-0">
+                    <span class="text-slate-400 font-bold mr-1">Filtrar:</span>
+                    <button type="button" @click="catalogFilterSector = 'todos'" :class="catalogFilterSector === 'todos' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'" class="px-2.5 py-1 rounded-xl touch-btn">Todos</button>
+                    <button type="button" @click="catalogFilterSector = 'Pizza'" :class="catalogFilterSector === 'Pizza' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'" class="px-2.5 py-1 rounded-xl touch-btn">🍕 Pizza</button>
+                    <button type="button" @click="catalogFilterSector = 'Cozinha'" :class="catalogFilterSector === 'Cozinha' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'" class="px-2.5 py-1 rounded-xl touch-btn">🍳 Cozinha</button>
+                    <button type="button" @click="catalogFilterSector = 'Bar'" :class="catalogFilterSector === 'Bar' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'" class="px-2.5 py-1 rounded-xl touch-btn">🍸 Bar</button>
+                    <button type="button" @click="catalogFilterSector = 'Salão'" :class="catalogFilterSector === 'Salão' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'" class="px-2.5 py-1 rounded-xl touch-btn">🍷 Salão</button>
+                </div>
+
+                <div class="relative w-full sm:w-64">
+                    <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                    <input 
+                        type="text" 
+                        x-model="catalogSearchTerm" 
+                        placeholder="Buscar produto..."
+                        class="w-full pl-9 pr-4 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-granodoc-500"
+                    >
+                </div>
+            </div>
+
+            <!-- Barra de Ações em Massa (Suspensa/Destaque) -->
+            <div 
+                x-show="selectedProductIds.length > 0" 
+                x-transition:enter="transition ease-out duration-200"
+                x-transition:enter-start="opacity-0 -translate-y-2"
+                x-transition:enter-end="opacity-100 translate-y-0"
+                x-transition:leave="transition ease-in duration-150"
+                x-transition:leave-start="opacity-100 translate-y-0"
+                x-transition:leave-end="opacity-0 -translate-y-2"
+                class="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-sm"
+                style="display: none;"
+            >
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                    <span class="text-xs font-bold text-rose-900 dark:text-rose-200">
+                        <span class="font-black" x-text="selectedProductIds.length"></span> produto(s) selecionado(s)
+                    </span>
+                    <button 
+                        type="button" 
+                        @click="selectedProductIds = []" 
+                        class="text-[11px] text-rose-600 dark:text-rose-400 hover:underline font-semibold ml-1 cursor-pointer"
+                    >
+                        Desmarcar todos
+                    </button>
+                </div>
+
+                <button 
+                    type="button" 
+                    @click="openBulkDeleteModal()" 
+                    class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/30 transition touch-btn flex items-center gap-2"
+                >
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    <span x-text="isAllProductsSelected && selectedProductIds.length === filteredCatalogProducts.length ? 'Excluir Todos os Produtos' : 'Excluir Selecionados (' + selectedProductIds.length + ')'"></span>
+                </button>
+            </div>
+
+            <!-- Tabela de Produtos -->
+            <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 dark:bg-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[10px] sticky top-0">
+                            <tr>
+                                <th class="py-3 px-3 w-10 text-center">
+                                    <input 
+                                        type="checkbox" 
+                                        @change="toggleSelectAllProducts()" 
+                                        :checked="isAllProductsSelected"
+                                        class="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 dark:border-slate-600 cursor-pointer"
+                                        title="Selecionar Todos"
+                                    >
+                                </th>
+                                <th class="py-3 px-4">Produto</th>
+                                <th class="py-3 px-4">Praça(s)</th>
+                                <th class="py-3 px-4">Categoria</th>
+                                <th class="py-3 px-4 text-center">Unidade</th>
+                                <th class="py-3 px-4 text-center">Status</th>
+                                <th class="py-3 px-4 text-center">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            <template x-for="prod in filteredCatalogProducts" :key="prod.id">
+                                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition" :class="selectedProductIds.includes(prod.id) ? 'bg-rose-50/40 dark:bg-rose-950/20' : ''">
+                                    <td class="py-3 px-3 text-center">
+                                        <input 
+                                            type="checkbox" 
+                                            :value="prod.id" 
+                                            x-model="selectedProductIds"
+                                            class="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 dark:border-slate-600 cursor-pointer"
+                                        >
+                                    </td>
+                                    <td class="py-3 px-4 font-bold text-slate-900 dark:text-white" x-text="prod.nome"></td>
+                                    <td class="py-3 px-4">
+                                        <div class="flex flex-wrap gap-1">
+                                            <template x-for="s in (prod.setores && prod.setores.length ? prod.setores : [prod.setor_responsavel])" :key="s">
+                                                <span 
+                                                    class="px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs inline-flex items-center gap-1"
+                                                    :class="{
+                                                        'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800': s.toLowerCase() === 'pizza',
+                                                        'bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300 border border-orange-300 dark:border-orange-800': s.toLowerCase() === 'cozinha',
+                                                        'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-800': s.toLowerCase() === 'bar',
+                                                        'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800': ['salão', 'salao', 'sommelier'].includes(s.toLowerCase()),
+                                                        'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700': !['pizza', 'cozinha', 'bar', 'salão', 'salao', 'sommelier'].includes(s.toLowerCase())
+                                                    }"
+                                                    x-text="s"
+                                                ></span>
+                                            </template>
+                                        </div>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <span class="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-[11px]" x-text="prod.categoria || 'Geral'"></span>
+                                    </td>
+                                    <td class="py-3 px-4 text-center uppercase font-black text-[11px] text-slate-500" x-text="prod.unidade_medida"></td>
+                                    <td class="py-3 px-4 text-center">
+                                        <button 
+                                            type="button" 
+                                            @click="toggleProduct(prod.id, prod.ativo)"
+                                            :class="prod.ativo ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'"
+                                            class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase transition touch-btn"
+                                            x-text="prod.ativo ? 'Ativo' : 'Inativo'"
+                                        ></button>
+                                    </td>
+                                    <td class="py-3 px-4 text-center">
+                                        <div class="flex items-center justify-center gap-1">
+                                            <button 
+                                                type="button" 
+                                                @click="openEditProduct(prod)"
+                                                class="p-1.5 rounded-lg text-granodoc-600 hover:text-granodoc-800 hover:bg-granodoc-50 dark:text-granodoc-400 dark:hover:bg-granodoc-950/40 transition touch-btn"
+                                                title="Editar insumo e praças"
+                                            >
+                                                <i data-lucide="pencil" class="w-4 h-4"></i>
+                                            </button>
+                                            <button 
+                                                type="button" 
+                                                @click="deleteProduct(prod.id, prod.nome)"
+                                                class="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition touch-btn"
+                                                title="Excluir ou desativar insumo"
+                                            >
+                                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <div x-show="filteredCatalogProducts.length === 0" class="p-12 text-center text-slate-400 text-xs">
+                        Nenhum insumo encontrado com os filtros selecionados.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. SUB-ABA: CADASTRO UNITÁRIO -->
+        <div x-show="adminCatalogTab === 'single'" class="max-w-xl mx-auto bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+            <div class="flex items-center gap-2">
+                <i data-lucide="plus-circle" class="w-5 h-5 text-granodoc-600"></i>
+                <h3 class="text-base font-black text-slate-900 dark:text-white">Cadastrar Insumo Individual</h3>
+            </div>
+
+            <form @submit.prevent="createProduct()" class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-bold text-slate-500 mb-1">Nome do Insumo *</label>
+                    <input 
+                        type="text" 
+                        x-model="newProduct.nome" 
+                        placeholder="ex: Queijo Provolone Defumado, Farinha Semolina..." 
+                        required 
+                        class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                    >
+                </div>
+
+                <!-- Praças com Checkboxes -->
+                <div class="space-y-1.5">
+                    <label class="block font-bold text-slate-700 dark:text-slate-300">Praça(s) Responsável(is) *</label>
+                    <p class="text-[11px] text-slate-400">Marque uma ou mais praças onde o insumo estará disponível:</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label 
+                            class="flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition select-none"
+                            :class="newProduct.setores && newProduct.setores.includes('Pizza') ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 font-bold' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'"
+                        >
+                            <input 
+                                type="checkbox" 
+                                value="Pizza" 
+                                x-model="newProduct.setores" 
+                                class="w-4 h-4 rounded text-granodoc-600 focus:ring-granodoc-500 cursor-pointer"
+                            >
+                            <span>🍕 Pizza</span>
+                        </label>
+                        <label 
+                            class="flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition select-none"
+                            :class="newProduct.setores && newProduct.setores.includes('Cozinha') ? 'border-orange-500 bg-orange-50/50 dark:bg-orange-950/30 text-orange-900 dark:text-orange-200 font-bold' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'"
+                        >
+                            <input 
+                                type="checkbox" 
+                                value="Cozinha" 
+                                x-model="newProduct.setores" 
+                                class="w-4 h-4 rounded text-granodoc-600 focus:ring-granodoc-500 cursor-pointer"
+                            >
+                            <span>🍳 Cozinha</span>
+                        </label>
+                        <label 
+                            class="flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition select-none"
+                            :class="newProduct.setores && newProduct.setores.includes('Bar') ? 'border-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/30 text-cyan-900 dark:text-cyan-200 font-bold' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'"
+                        >
+                            <input 
+                                type="checkbox" 
+                                value="Bar" 
+                                x-model="newProduct.setores" 
+                                class="w-4 h-4 rounded text-granodoc-600 focus:ring-granodoc-500 cursor-pointer"
+                            >
+                            <span>🍸 Bar</span>
+                        </label>
+                        <label 
+                            class="flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition select-none"
+                            :class="newProduct.setores && (newProduct.setores.includes('Salão') || newProduct.setores.includes('Sommelier')) ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/30 text-rose-900 dark:text-rose-200 font-bold' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'"
+                        >
+                            <input 
+                                type="checkbox" 
+                                value="Salão" 
+                                x-model="newProduct.setores" 
+                                class="w-4 h-4 rounded text-granodoc-600 focus:ring-granodoc-500 cursor-pointer"
+                            >
+                            <span>🍷 Salão</span>
+                        </label>
+                    </div>
+                    <p x-show="!newProduct.setores || newProduct.setores.length === 0" class="text-rose-500 text-[10px] font-bold">
+                        * Selecione pelo menos uma praça.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Unidade de Medida *</label>
+                        <select 
+                            x-model="newProduct.unidade" 
+                            required 
+                            class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                        >
+                            <option value="kg">kg (Quilograma)</option>
+                            <option value="un">un (Unidade)</option>
+                            <option value="pct">pct (Pacote)</option>
+                            <option value="litro">litro (Litro)</option>
+                            <option value="lata">lata (Lata)</option>
+                            <option value="garrafa">garrafa (Garrafa)</option>
+                            <option value="cx">cx (Caixa)</option>
+                            <option value="g">g (Gramas)</option>
+                            <option value="maço">maço (Maço / Molho)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-slate-500 mb-1">Categoria</label>
+                    <input 
+                        type="text" 
+                        x-model="newProduct.categoria" 
+                        placeholder="ex: Laticínios, Farinhas, Destilados..." 
+                        class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                    >
+                </div>
+
+                <button 
+                    type="submit" 
+                    class="w-full py-3 rounded-xl bg-granodoc-600 hover:bg-granodoc-700 text-white font-black text-xs transition touch-btn shadow-md mt-2"
+                >
+                    Salvar no Catálogo Oficial
+                </button>
+            </form>
+        </div>
+
+        <!-- 3. SUB-ABA: GESTÃO DE CATEGORIAS -->
+        <div x-show="adminCatalogTab === 'categories'" class="max-w-2xl mx-auto space-y-4">
+            <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                            <i data-lucide="tags" class="w-4 h-4 text-granodoc-600"></i>
+                            <span>Categorias por Praça</span>
+                        </h3>
+                        <p class="text-xs text-slate-500">Crie ou exclua categorias específicas de cada praça</p>
+                    </div>
+                    <select 
+                        x-model="adminCatFilterSector" 
+                        @change="loadAdminCategories()"
+                        class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-xs"
+                    >
+                        <option value="Pizza">🍕 Pizza</option>
+                        <option value="Cozinha">🍳 Cozinha</option>
+                        <option value="Bar">🍸 Bar</option>
+                        <option value="Salão">🍷 Salão</option>
+                    </select>
+                </div>
+
+                <!-- Formulário de Nova Categoria -->
+                <form @submit.prevent="submitNewCategoryAdmin()" class="flex gap-2 text-xs">
+                    <input 
+                        type="text" 
+                        x-model="newCategoryName" 
+                        placeholder="Nome da nova categoria..." 
+                        required 
+                        class="flex-1 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                    >
+                    <button type="submit" class="px-4 py-2.5 rounded-xl bg-granodoc-600 hover:bg-granodoc-700 text-white font-bold shrink-0 transition touch-btn">
+                        + Criar Categoria
+                    </button>
+                </form>
+
+                <!-- Lista de Categorias -->
+                <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden text-xs">
+                    <template x-for="cat in adminCategories" :key="cat.id">
+                        <div class="p-3 bg-white dark:bg-slate-900 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                            <div>
+                                <span class="font-bold text-slate-800 dark:text-slate-200" x-text="cat.nome"></span>
+                                <span class="text-[10px] text-slate-400 ml-1.5" x-text="'(' + (cat.total_produtos || 0) + ' produtos)'"></span>
+                            </div>
+                            <button 
+                                type="button" 
+                                @click="deleteCategoryAdmin(cat.id, cat.nome)"
+                                class="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                                title="Excluir categoria"
+                            >
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </template>
+                    <div x-show="adminCategories.length === 0" class="p-8 text-center text-slate-400 text-xs">
+                        Nenhuma categoria cadastrada para esta praça.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. SUB-ABA: CADASTRO EM LOTE (ADMIN) -->
+        <div x-show="adminCatalogTab === 'batch'" class="max-w-2xl mx-auto bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 text-xs">
+            
+            <!-- BANNER DE DOWNLOAD DO MODELO OFICIAL -->
+            <div class="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-amber-500/10 border border-emerald-300/60 dark:border-emerald-800/60 rounded-2xl p-4 space-y-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-start gap-2.5">
+                        <div class="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                            <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <p class="font-black text-slate-900 dark:text-white text-xs sm:text-sm flex items-center gap-1.5">
+                                <span>Modelos Oficiais de Planilha para Download</span>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold">Recomendado</span>
+                            </p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                Planilhas prontas com cabeçalhos oficiais, exemplos e tabela de unidades válidas:
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                        <a 
+                            href="/api/catalog/template/excel" 
+                            download="modelo_cadastro_insumos.xlsx"
+                            class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition touch-btn"
+                            title="Baixar planilha formatada para Microsoft Excel"
+                        >
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                            <span>Modelo Excel (.xlsx)</span>
+                        </a>
+                        <a 
+                            href="/api/catalog/template/csv" 
+                            download="modelo_cadastro_insumos.csv"
+                            class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 shadow-sm transition touch-btn"
+                            title="Baixar arquivo separado por ponto-e-vírgula"
+                        >
+                            <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+                            <span>Modelo CSV (.csv)</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- GUIA RÁPIDO DE COLUNAS & MÉTRICAS -->
+                <div class="pt-2.5 border-t border-emerald-200/60 dark:border-emerald-800/40 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                    <div class="bg-white/80 dark:bg-slate-800/60 p-2.5 rounded-xl border border-emerald-100 dark:border-slate-700">
+                        <p class="font-bold text-slate-800 dark:text-slate-200 mb-1">📋 Ordem das Colunas na Planilha:</p>
+                        <ul class="space-y-0.5 text-slate-600 dark:text-slate-400">
+                            <li><strong class="text-slate-900 dark:text-slate-100">1ª Coluna:</strong> Nome do Produto <span class="text-rose-500 font-bold">*</span></li>
+                            <li><strong class="text-slate-900 dark:text-slate-100">2ª Coluna:</strong> Categoria (ex: Farinhas, Queijos, Carnes)</li>
+                            <li><strong class="text-slate-900 dark:text-slate-100">3ª Coluna:</strong> Unidade de Medida (métrica)</li>
+                            <li><strong class="text-slate-900 dark:text-slate-100">4ª Coluna:</strong> Praça (Pizza, Cozinha, Bar, Salão)</li>
+                        </ul>
+                    </div>
+                    <div class="bg-white/80 dark:bg-slate-800/60 p-2.5 rounded-xl border border-emerald-100 dark:border-slate-700">
+                        <p class="font-bold text-slate-800 dark:text-slate-200 mb-1">⚖️ Siglas de Unidades Válidas:</p>
+                        <div class="flex flex-wrap gap-1 text-[10px] font-mono">
+                            <span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold">kg</span>
+                            <span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold">g</span>
+                            <span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold">litro</span>
+                            <span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold">ml</span>
+                            <span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold">un</span>
+                            <span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold">pct</span>
+                            <span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold">lata</span>
+                            <span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold">garrafa</span>
+                            <span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold">cx</span>
+                            <span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold">mç</span>
+                        </div>
+                        <p class="text-[10px] text-slate-500 mt-1">Multi-praças: pode colocar separadas por vírgula (ex: <code>Pizza, Cozinha</code>).</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OPÇÃO A: ENVIAR ARQUIVO EXCEL / CSV DIRETAMENTE -->
+            <div class="border-2 border-dashed border-amber-300 dark:border-amber-800/80 rounded-2xl p-4 text-center hover:border-amber-500 transition cursor-pointer relative bg-amber-50/30 dark:bg-amber-950/20 group">
+                <input 
+                    type="file" 
+                    accept=".xlsx, .xls, .csv, .txt" 
+                    @change="handleFileUploadAdmin($event)" 
+                    :disabled="isBatchLoading"
+                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                >
+                <div class="flex flex-col items-center gap-1.5 text-slate-600 dark:text-slate-300 pointer-events-none">
+                    <div class="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center group-hover:scale-110 transition">
+                        <i data-lucide="upload" class="w-5 h-5"></i>
+                    </div>
+                    <p class="font-bold text-xs text-slate-800 dark:text-slate-100">
+                        Clique aqui para carregar sua planilha preenchida (.xlsx ou .csv)
+                    </p>
+                    <p class="text-[11px] text-slate-400">
+                        O sistema processará as colunas e cadastrará todos os insumos automaticamente!
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 my-2 text-slate-400">
+                <div class="h-px bg-slate-200 dark:bg-slate-800 flex-1"></div>
+                <span class="text-[10px] font-bold uppercase tracking-wider">Ou Cole Linhas da Planilha Abaixo</span>
+                <div class="h-px bg-slate-200 dark:bg-slate-800 flex-1"></div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                    <label class="block font-bold text-slate-500 mb-1">Praça Padrão *</label>
+                    <select x-model="adminBatchForm.setor" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold focus:outline-none">
+                        <option value="Pizza">🍕 Pizza</option>
+                        <option value="Cozinha">🍳 Cozinha</option>
+                        <option value="Bar">🍸 Bar</option>
+                        <option value="Salão">🍷 Salão</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-500 mb-1">Categoria Padrão:</label>
+                    <input type="text" x-model="adminBatchForm.default_categoria" placeholder="Geral" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium focus:outline-none">
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-500 mb-1">Unidade Padrão:</label>
+                    <select x-model="adminBatchForm.default_unidade" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold focus:outline-none">
+                        <option value="kg">kg (Quilograma)</option>
+                        <option value="un">un (Unidade)</option>
+                        <option value="pct">pct (Pacote)</option>
+                        <option value="litro">litro (Litro)</option>
+                        <option value="lata">lata (Lata)</option>
+                        <option value="garrafa">garrafa (Garrafa)</option>
+                        <option value="cx">cx (Caixa)</option>
+                        <option value="mç">mç (Maço)</option>
+                    </select>
+                </div>
+            </div>
+
+            <textarea 
+                x-model="adminBatchForm.raw_text" 
+                rows="6" 
+                placeholder="Cole aqui células copiadas do Excel (TAB) ou separadas por ';'&#10;Exemplo:&#10;Farinha de Trigo Especial; Farinhas; kg; Pizza&#10;Queijo Gouda; Laticínios; kg; Pizza, Cozinha&#10;Vinho Malbec Reserva; Vinhos; garrafa; Salão"
+                class="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono focus:ring-2 focus:ring-amber-500 focus:outline-none resize-none"
+            ></textarea>
+
+            <button 
+                type="button" 
+                @click="submitBatchProductsAdmin()"
+                :disabled="isBatchLoading || !adminBatchForm.raw_text.trim()"
+                class="w-full py-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-black text-xs transition touch-btn shadow-md flex items-center justify-center gap-2"
+            >
+                <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                <span x-text="isBatchLoading ? 'Importando Insumos...' : 'Importar e Cadastrar Todos os Insumos'"></span>
+            </button>
+        </div>
+
+    <!-- MODAL DE EDIÇÃO DE INSUMO (MULTI-PRAÇAS) -->
+    <div 
+        x-show="editModalOpen" 
+        x-cloak 
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+        @keydown.escape.window="closeEditModal()"
+    >
+        <div 
+            @click.away="closeEditModal()"
+            class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+        >
+            <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-xl bg-granodoc-100 dark:bg-granodoc-950/60 text-granodoc-600 flex items-center justify-center font-black">
+                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-black text-slate-900 dark:text-white">Editar Insumo</h3>
+                        <p class="text-[11px] text-slate-400">Configure nome, categoria e praças onde o produto está disponível</p>
+                    </div>
+                </div>
+                <button 
+                    type="button" 
+                    @click="closeEditModal()"
+                    class="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 transition"
+                >
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <form @submit.prevent="saveEditProduct()" class="space-y-4 text-xs">
+                <!-- Nome -->
+                <div>
+                    <label class="block font-bold text-slate-500 mb-1">Nome do Insumo *</label>
+                    <input 
+                        type="text" 
+                        x-model="editingProduct.nome" 
+                        required 
+                        class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                    >
+                </div>
+
+                <!-- Praças com Checkboxes -->
+                <div class="space-y-1.5">
+                    <label class="block font-bold text-slate-700 dark:text-slate-300">
+                        Praças Onde o Insumo Estará Disponível *
+                    </label>
+                    <p class="text-[11px] text-slate-400">Marque todas as praças que podem solicitar este insumo no catálogo:</p>
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                        <label 
+                            class="flex items-center gap-2.5 p-3 rounded-2xl border cursor-pointer transition select-none"
+                            :class="editingProduct.setores && editingProduct.setores.includes('Pizza') ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 font-bold' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'"
+                        >
+                            <input 
+                                type="checkbox" 
+                                value="Pizza" 
+                                x-model="editingProduct.setores" 
+                                class="w-4 h-4 rounded text-granodoc-600 focus:ring-granodoc-500 cursor-pointer"
+                            >
+                            <span class="text-xs">🍕 Pizza</span>
+                        </label>
+                        <label 
+                            class="flex items-center gap-2.5 p-3 rounded-2xl border cursor-pointer transition select-none"
+                            :class="editingProduct.setores && editingProduct.setores.includes('Cozinha') ? 'border-orange-500 bg-orange-50/50 dark:bg-orange-950/30 text-orange-900 dark:text-orange-200 font-bold' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'"
+                        >
+                            <input 
+                                type="checkbox" 
+                                value="Cozinha" 
+                                x-model="editingProduct.setores" 
+                                class="w-4 h-4 rounded text-granodoc-600 focus:ring-granodoc-500 cursor-pointer"
+                            >
+                            <span class="text-xs">🍳 Cozinha</span>
+                        </label>
+                        <label 
+                            class="flex items-center gap-2.5 p-3 rounded-2xl border cursor-pointer transition select-none"
+                            :class="editingProduct.setores && editingProduct.setores.includes('Bar') ? 'border-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/30 text-cyan-900 dark:text-cyan-200 font-bold' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'"
+                        >
+                            <input 
+                                type="checkbox" 
+                                value="Bar" 
+                                x-model="editingProduct.setores" 
+                                class="w-4 h-4 rounded text-granodoc-600 focus:ring-granodoc-500 cursor-pointer"
+                            >
+                            <span class="text-xs">🍸 Bar</span>
+                        </label>
+                        <label 
+                            class="flex items-center gap-2.5 p-3 rounded-2xl border cursor-pointer transition select-none"
+                            :class="editingProduct.setores && (editingProduct.setores.includes('Salão') || editingProduct.setores.includes('Sommelier')) ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/30 text-rose-900 dark:text-rose-200 font-bold' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'"
+                        >
+                            <input 
+                                type="checkbox" 
+                                value="Salão" 
+                                x-model="editingProduct.setores" 
+                                class="w-4 h-4 rounded text-granodoc-600 focus:ring-granodoc-500 cursor-pointer"
+                            >
+                            <span class="text-xs">🍷 Salão</span>
+                        </label>
+                    </div>
+                    <p x-show="!editingProduct.setores || editingProduct.setores.length === 0" class="text-rose-500 text-[11px] font-bold">
+                        * Selecione pelo menos uma praça.
+                    </p>
+                </div>
+
+                <!-- Unidade e Categoria -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Unidade de Medida *</label>
+                        <select 
+                            x-model="editingProduct.unidade" 
+                            required 
+                            class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold uppercase focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                        >
+                            <option value="kg">kg (Quilograma)</option>
+                            <option value="g">g (Grama)</option>
+                            <option value="litro">litro (Litro)</option>
+                            <option value="ml">ml (Mililitro)</option>
+                            <option value="un">un (Unidade)</option>
+                            <option value="pct">pct (Pacote)</option>
+                            <option value="cx">cx (Caixa)</option>
+                            <option value="garrafa">garrafa</option>
+                            <option value="lata">lata</option>
+                            <option value="mç">mç (Maço)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Categoria *</label>
+                        <input 
+                            type="text" 
+                            x-model="editingProduct.categoria" 
+                            placeholder="ex: Laticínios, Bebidas..." 
+                            class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium focus:ring-2 focus:ring-granodoc-500 focus:outline-none"
+                        >
+                    </div>
+                </div>
+
+                <!-- Botões de Ação -->
+                <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <button 
+                        type="button" 
+                        @click="closeEditModal()" 
+                        class="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold transition"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        type="submit" 
+                        :disabled="!editingProduct.setores || editingProduct.setores.length === 0"
+                        class="px-5 py-2.5 rounded-xl bg-granodoc-600 hover:bg-granodoc-700 disabled:opacity-50 text-white font-black shadow-md shadow-granodoc-600/30 transition touch-btn flex items-center gap-2"
+                    >
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                        <span>Salvar Alterações</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- ABA 5: PEDIDOS CONCLUÍDOS (ARQUIVADOS / COMPRADOS) -->
+    <!-- ========================================================================= -->
+    <div x-show="activeTab === 'completed'" class="space-y-6">
+
+        <!-- CABEÇALHO DA ABA 5 & EXPORTAÇÃO EM PDF -->
+        <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                        Histórico Oficial
+                    </span>
+                    <span class="text-xs text-slate-400">&bull;</span>
+                    <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Suprimentos Finalizados</span>
+                </div>
+                <h2 class="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="check-circle" class="w-5 h-5 text-emerald-600"></i>
+                    <span>Pedidos Concluídos & Arquivados</span>
+                </h2>
+                <p class="text-xs text-slate-500 mt-0.5">
+                    Histórico de requisições com suprimentos comprados e finalizados
+                </p>
+            </div>
+
+            <!-- Botão de Exportação em PDF -->
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <a 
+                    :href="getCompletedPdfUrl()" 
+                    target="_blank"
+                    class="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition touch-btn select-none"
+                    title="Exportar histórico dos pedidos concluídos em PDF"
+                >
+                    <i data-lucide="download" class="w-4 h-4"></i>
+                    <span>Exportar Histórico em PDF</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- BARRA DE FILTROS: PERÍODO E PRAÇA -->
+        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+            <!-- Filtro por Período -->
+            <div class="flex items-center gap-1.5 flex-wrap text-xs">
+                <span class="text-slate-400 font-bold mr-1 shrink-0 flex items-center gap-1">
+                    <i data-lucide="calendar" class="w-3.5 h-3.5 text-slate-400"></i>
+                    <span>Período:</span>
+                </span>
+                <button 
+                    type="button" 
+                    @click="setCompletedPeriod('today')"
+                    :class="completedFilterPeriod === 'today' ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold transition text-xs cursor-pointer"
+                >Hoje</button>
+                <button 
+                    type="button" 
+                    @click="setCompletedPeriod('7d')"
+                    :class="completedFilterPeriod === '7d' ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold transition text-xs cursor-pointer"
+                >Últimos 7 Dias</button>
+                <button 
+                    type="button" 
+                    @click="setCompletedPeriod('all')"
+                    :class="completedFilterPeriod === 'all' ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold transition text-xs cursor-pointer"
+                >Todos os Concluídos</button>
+                <button 
+                    type="button" 
+                    @click="setCompletedPeriod('custom')"
+                    :class="completedFilterPeriod === 'custom' ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold transition text-xs cursor-pointer"
+                >De / Até</button>
+
+                <!-- Inputs de Data Personalizada -->
+                <div x-show="completedFilterPeriod === 'custom'" class="flex items-center gap-1.5 ml-1">
+                    <input 
+                        type="date" 
+                        x-model="completedStartDate" 
+                        @change="loadCompletedOrders()"
+                        class="px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                    >
+                    <span class="text-slate-400 font-bold text-[11px]">até</span>
+                    <input 
+                        type="date" 
+                        x-model="completedEndDate" 
+                        @change="loadCompletedOrders()"
+                        class="px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                    >
+                </div>
+            </div>
+
+            <!-- Filtro por Praça -->
+            <div class="flex items-center gap-1 overflow-x-auto text-xs pb-1 lg:pb-0">
+                <span class="text-slate-400 font-bold mr-1 shrink-0">Praça:</span>
+                <button 
+                    type="button" 
+                    @click="completedFilterSector = 'todos'; loadCompletedOrders()"
+                    :class="completedFilterSector === 'todos' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold"
+                >Todos</button>
+                <button 
+                    type="button" 
+                    @click="completedFilterSector = 'Pizza'; loadCompletedOrders()"
+                    :class="completedFilterSector === 'Pizza' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold"
+                >🍕 Pizza</button>
+                <button 
+                    type="button" 
+                    @click="completedFilterSector = 'Cozinha'; loadCompletedOrders()"
+                    :class="completedFilterSector === 'Cozinha' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold"
+                >🍳 Cozinha</button>
+                <button 
+                    type="button" 
+                    @click="completedFilterSector = 'Bar'; loadCompletedOrders()"
+                    :class="completedFilterSector === 'Bar' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold"
+                >🍸 Bar</button>
+                <button 
+                    type="button" 
+                    @click="completedFilterSector = 'Salão'; loadCompletedOrders()"
+                    :class="completedFilterSector === 'Salão' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
+                    class="px-2.5 py-1 rounded-lg touch-btn font-semibold"
+                >🍷 Salão</button>
+            </div>
+        </div>
+
+        <!-- LISTAGEM DE CARDS DE PEDIDOS CONCLUÍDOS -->
+        <div class="space-y-4">
+            <template x-for="order in completedOrders" :key="'completed-' + (order.id || order.pedido_id)">
+                <div class="bg-white dark:bg-slate-900 rounded-3xl border border-emerald-200/70 dark:border-emerald-950/60 p-5 shadow-sm space-y-4 transition hover:shadow-md">
+                    <!-- Cabeçalho do Card Concluído -->
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-2xl bg-emerald-500 text-white flex items-center justify-center font-black text-base shadow-sm">
+                                <span x-text="getSectorEmoji(order.nome_setor || order.praca)"></span>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h4 class="text-sm font-black text-slate-900 dark:text-white" x-text="'Praça: ' + (order.nome_setor || order.praca)"></h4>
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                        Comprado / Concluído
+                                    </span>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-0.5" x-text="'Pedido #' + (order.id || order.pedido_id) + ' • ' + formatDateTimeBR(order.data_hora)"></p>
+                            </div>
+                        </div>
+
+                        <!-- Ações do Pedido Concluído: Reabrir -->
+                        <div class="flex items-center gap-2 self-end sm:self-auto">
+                            <button 
+                                type="button" 
+                                @click="reopenOrder(order.id || order.pedido_id, order.nome_setor || order.praca)"
+                                class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-amber-100 text-slate-700 hover:text-amber-800 dark:bg-slate-800 dark:hover:bg-amber-950 dark:text-slate-300 dark:hover:text-amber-300 text-xs font-black transition touch-btn flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer"
+                                title="Reabrir este pedido e retorná-lo para a Aba 1 e Aba 2 como Aprovado"
+                            >
+                                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 text-amber-500"></i>
+                                <span>Reabrir Pedido</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Conteúdo: Itens Atendidos -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <!-- Itens do Catálogo -->
+                        <div class="space-y-1.5">
+                            <p class="font-bold uppercase tracking-wider text-slate-400 text-[10px] flex items-center gap-1">
+                                <i data-lucide="package-check" class="w-3 h-3 text-emerald-500"></i>
+                                <span>Itens Atendidos (Catálogo):</span>
+                            </p>
+                            <template x-for="item in order.itens_catalogo" :key="'cat-comp-' + item.id">
+                                <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                                    <span class="font-semibold text-slate-800 dark:text-slate-200" x-text="item.nome_produto"></span>
+                                    <span class="font-black text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-[11px]" x-text="item.quantidade_pedida + ' ' + item.unidade_medida"></span>
+                                </div>
+                            </template>
+                            <div x-show="!order.itens_catalogo || order.itens_catalogo.length === 0" class="text-slate-400 italic text-[11px]">
+                                Nenhum item de catálogo.
+                            </div>
+                        </div>
+
+                        <!-- Itens Avulsos & Observações -->
+                        <div class="space-y-2">
+                            <div>
+                                <p class="font-bold uppercase tracking-wider text-amber-500 text-[10px] flex items-center gap-1">
+                                    <i data-lucide="sparkles" class="w-3 h-3 text-amber-500"></i>
+                                    <span>Itens Avulsos Atendidos:</span>
+                                </p>
+                                <div class="space-y-1.5 mt-1">
+                                    <template x-for="av in order.itens_avulsos" :key="'av-comp-' + av.id">
+                                        <div class="flex items-center justify-between p-2 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/30 text-amber-900 dark:text-amber-200">
+                                            <span class="font-bold" x-text="'✨ ' + av.descricao_item"></span>
+                                            <span class="font-black px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-100 text-[11px]" x-text="av.quantidade + ' ' + av.unidade_medida"></span>
+                                        </div>
+                                    </template>
+                                    <div x-show="!order.itens_avulsos || order.itens_avulsos.length === 0" class="text-slate-400 italic text-[11px]">
+                                        Nenhum item avulso.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Observações -->
+                            <div x-show="order.observacoes" class="p-2.5 rounded-xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 text-[11px]">
+                                <span class="font-bold text-slate-700 dark:text-slate-300">Nota do Operador:</span>
+                                <span class="text-slate-600 dark:text-slate-400 italic ml-1" x-text="order.observacoes"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Sem Pedidos Concluídos -->
+            <div x-show="completedOrders.length === 0" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
+                <i data-lucide="archive" class="w-12 h-12 text-slate-400 mx-auto mb-3 opacity-60"></i>
+                <h3 class="text-base font-black text-slate-800 dark:text-slate-200">Nenhum pedido concluído encontrado</h3>
+                <p class="text-xs text-slate-500 mt-1">Não há requisições marcadas como 'Comprado' para o período e praça selecionados.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- MODAL: CONFIRMAR EXCLUSÃO EM MASSA -->
+    <div 
+        x-show="bulkDeleteModalOpen" 
+        x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-150"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
+        style="display: none;"
+        @keydown.escape.window="bulkDeleteModalOpen = false"
+    >
+        <div 
+            @click.away="bulkDeleteModalOpen = false"
+            x-show="bulkDeleteModalOpen"
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="opacity-0 scale-95"
+            x-transition:enter-end="opacity-100 scale-100"
+            x-transition:leave="transition ease-in duration-150"
+            x-transition:leave-start="opacity-100 scale-100"
+            x-transition:leave-end="opacity-0 scale-95"
+            class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-md w-full overflow-hidden p-6 space-y-5"
+        >
+            <!-- Ícone e Cabeçalho -->
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                    <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h3 class="text-lg font-black text-slate-900 dark:text-white">Confirmar Exclusão em Massa</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                        Você tem certeza de que deseja apagar <span class="font-bold text-rose-600 dark:text-rose-400" x-text="selectedProductIds.length"></span> produtos do catálogo? Esta ação é irreversível e removerá os itens da lista operacional.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Ações -->
+            <div class="flex items-center justify-end gap-3 pt-2">
+                <button 
+                    type="button" 
+                    @click="bulkDeleteModalOpen = false" 
+                    :disabled="isBatchDeleting"
+                    class="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition disabled:opacity-50"
+                >
+                    Cancelar
+                </button>
+                <button 
+                    type="button" 
+                    @click="confirmBulkDelete()" 
+                    :disabled="isBatchDeleting"
+                    class="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-lg shadow-rose-600/30 transition touch-btn flex items-center gap-2 disabled:opacity-50"
+                >
+                    <template x-if="isBatchDeleting">
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                    </template>
+                    <template x-if="!isBatchDeleting">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </template>
+                    <span x-text="isBatchDeleting ? 'Apagando...' : 'Confirmar e Apagar'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function adminApp() {
+    return {
+        activeTab: 'daily',
+        selectedDate: new Date().toISOString().split('T')[0],
+        dailyOrders: [],
+        dailyStats: {},
+        consolidatedData: { catalogo: [], avulsos: [], resumo: {} },
+        catalogProducts: [],
+        filterSector: 'todos',
+        filterStatus: 'todos',
+        newProduct: { nome: '', setores: ['Pizza'], unidade: 'kg', categoria: 'Geral' },
+
+        // Estado da Gestão Avançada de Catálogo (Aba 4)
+        adminCatalogTab: 'list',
+        editModalOpen: false,
+        editingProduct: { id: null, nome: '', setores: [], unidade: 'kg', categoria: 'Geral' },
+        catalogFilterSector: 'todos',
+        catalogSearchTerm: '',
+        adminCategories: [],
+        adminCatFilterSector: 'Pizza',
+        newCategoryName: '',
+        adminBatchForm: { setor: 'Pizza', raw_text: '', default_categoria: 'Geral', default_unidade: 'kg' },
+        isBatchLoading: false,
+
+        // Seleção múltipla e exclusão em lote
+        selectedProductIds: [],
+        bulkDeleteModalOpen: false,
+        isBatchDeleting: false,
+
+        // Estado do botão de WhatsApp
+        copiedWhatsApp: false,
+        isCopyingWhatsApp: false,
+
+        // Estado da Aba 5: Pedidos Concluídos
+        completedOrders: [],
+        completedFilterSector: 'todos',
+        completedFilterPeriod: 'all',
+        completedStartDate: '',
+        completedEndDate: '',
+        isLoadingCompleted: false,
+
+        get isDateToday() {
+            return this.selectedDate === new Date().toISOString().split('T')[0];
+        },
+
+        get isDateYesterday() {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            return this.selectedDate === yesterday.toISOString().split('T')[0];
+        },
+
+        async initData() {
+            await this.loadAll();
+            await this.loadCatalogProducts();
+            await this.loadAdminCategories();
+            await this.loadCompletedOrders();
+        },
+
+        async loadAll() {
+            await this.loadDailyOrders();
+            await this.loadConsolidated();
+        },
+
+        setDateToday() {
+            this.selectedDate = new Date().toISOString().split('T')[0];
+            this.loadAll();
+        },
+
+        setDateYesterday() {
+            const y = new Date();
+            y.setDate(y.getDate() - 1);
+            this.selectedDate = y.toISOString().split('T')[0];
+            this.loadAll();
+        },
+
+        onDateChanged() {
+            this.loadAll();
+        },
+
+        async loadDailyOrders() {
+            try {
+                const res = await fetch(`/api/admin/orders/by-date?date=${this.selectedDate}`);
+                if (res.ok) {
+                    this.dailyOrders = await res.json();
+                    this.$nextTick(() => {
+                        if (window.lucide) lucide.createIcons();
+                    });
+                }
+            } catch (err) {
+                console.error('Erro ao buscar pedidos diários:', err);
+            }
+        },
+
+        async changeStatus(orderId, newStatus) {
+            const order = this.dailyOrders.find(o => o.id === orderId);
+            if (!order) return;
+            if (order.status === newStatus) return;
+
+            const prevStatus = order.status;
+            const sectorName = order.nome_setor || 'Setor';
+
+            // Atualização reativa imediata na tela
+            if (newStatus === 'Comprado') {
+                this.dailyOrders = this.dailyOrders.filter(o => o.id !== orderId);
+                this.recalculateDailyStats();
+            } else {
+                order.status = newStatus;
+                this.recalculateDailyStats();
+            }
+
+            try {
+                const res = await fetch(`/api/admin/orders/${orderId}/status`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    if (newStatus === 'Comprado') {
+                        showToast(`Pedido da Praça ${sectorName} movido com sucesso para a Aba 5 (Pedidos Concluídos).`, 'success', 3500);
+                        await this.loadCompletedOrders();
+                    } else {
+                        showToast(`Pedido da Praça ${sectorName} marcado como ${newStatus} com sucesso!`, 'success', 3000);
+                    }
+                    if (typeof playTouchFeedback === 'function') playTouchFeedback();
+                    // Atualiza dados consolidados da Aba 2 em background
+                    await this.loadConsolidated();
+                } else {
+                    // Reverte status se backend retornar erro
+                    if (newStatus === 'Comprado') {
+                        order.status = prevStatus;
+                        this.dailyOrders.push(order);
+                        this.dailyOrders.sort((a, b) => b.id - a.id);
+                    } else {
+                        order.status = prevStatus;
+                    }
+                    this.recalculateDailyStats();
+                    showToast(data.detail || 'Não foi possível alterar o status. Tente novamente.', 'error');
+                }
+            } catch (err) {
+                console.error('Erro ao atualizar status do pedido:', err);
+                if (newStatus === 'Comprado') {
+                    order.status = prevStatus;
+                    this.dailyOrders.push(order);
+                    this.dailyOrders.sort((a, b) => b.id - a.id);
+                } else {
+                    order.status = prevStatus;
+                }
+                this.recalculateDailyStats();
+                showToast('Não foi possível alterar o status. Tente novamente.', 'error');
+            }
+        },
+
+        async changeAllStatusForDate(newStatus) {
+            if (!this.dailyOrders || this.dailyOrders.length === 0) {
+                showToast('Não há pedidos registrados nesta data para alterar o status.', 'warning');
+                return;
+            }
+
+            const dataBR = this.formatDateBR(this.selectedDate);
+            const prevOrders = [...this.dailyOrders];
+            const prevStatuses = this.dailyOrders.map(o => ({ id: o.id, status: o.status }));
+
+            // Atualização reativa imediata de todos os pedidos da data na tela
+            if (newStatus === 'Comprado') {
+                this.dailyOrders = [];
+                this.recalculateDailyStats();
+            } else {
+                this.dailyOrders.forEach(o => {
+                    o.status = newStatus;
+                });
+                this.recalculateDailyStats();
+            }
+
+            try {
+                const res = await fetch('/api/admin/orders/batch-status-by-date', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: this.selectedDate,
+                        status: newStatus
+                    })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    if (newStatus === 'Comprado') {
+                        showToast(`Todos os pedidos de ${dataBR} foram movidos com sucesso para a Aba 5 (Pedidos Concluídos).`, 'success', 3500);
+                        await this.loadCompletedOrders();
+                    } else {
+                        showToast(`Todos os pedidos de ${dataBR} foram marcados como ${newStatus}!`, 'success', 3500);
+                    }
+                    if (typeof playTouchFeedback === 'function') playTouchFeedback();
+                    await this.loadConsolidated();
+                } else {
+                    // Reverte se falhar
+                    this.dailyOrders = prevOrders;
+                    this.recalculateDailyStats();
+                    showToast(data.detail || 'Não foi possível alterar o status. Tente novamente.', 'error');
+                }
+            } catch (err) {
+                console.error('Erro ao atualizar status em lote:', err);
+                this.dailyOrders = prevOrders;
+                this.recalculateDailyStats();
+                showToast('Não foi possível alterar o status. Tente novamente.', 'error');
+            }
+        },
+
+        recalculateDailyStats() {
+            let tot_pedidos = this.dailyOrders.length;
+            let tot_pendentes = 0;
+            let tot_aprovados = 0;
+            let tot_comprados = 0;
+            const setores = new Set();
+            this.dailyOrders.forEach(o => {
+                if (o.status === 'Pendente') tot_pendentes++;
+                else if (o.status === 'Aprovado') tot_aprovados++;
+                else if (o.status === 'Comprado') tot_comprados++;
+                if (o.nome_setor) setores.add(o.nome_setor);
+            });
+            this.dailyStats = {
+                total_pedidos: tot_pedidos,
+                total_pendentes: tot_pendentes,
+                total_aprovados: tot_aprovados,
+                total_comprados: tot_comprados,
+                total_setores_ativos: setores.size
+            };
+        },
+
+        async loadConsolidated() {
+            try {
+                const res = await fetch(`/api/admin/consolidated?date=${this.selectedDate}`);
+                if (res.ok) {
+                    this.consolidatedData = await res.json();
+                    this.dailyStats = this.consolidatedData.resumo || {};
+                }
+            } catch (err) {
+                console.error('Erro ao buscar consolidado:', err);
+            }
+        },
+
+        async copyWhatsAppList() {
+            if (this.isCopyingWhatsApp) return;
+            this.isCopyingWhatsApp = true;
+
+            try {
+                // 1. Garante que os dados consolidados estejam carregados
+                if (!this.consolidatedData || (!this.consolidatedData.catalogo && !this.consolidatedData.avulsos)) {
+                    await this.loadConsolidated();
+                }
+
+                const catalogo = this.consolidatedData?.catalogo || [];
+                const avulsos = this.consolidatedData?.avulsos || [];
+
+                // 2. Valida se existem insumos consolidados nesta data
+                if (catalogo.length === 0 && avulsos.length === 0) {
+                    showToast('Não há pedidos ou insumos consolidados para a data selecionada.', 'warning', 4000);
+                    return;
+                }
+
+                // 3. Monta o texto formatado no padrão Markdown do WhatsApp
+                const textToCopy = buildWhatsAppConsolidatedText(this.consolidatedData);
+
+                // 4. Copia para a área de transferência (suporte robusto mobile e desktop)
+                const success = await copyTextToClipboard(textToCopy, 'Lista consolidada copiada com sucesso! Pronta para colar no WhatsApp.');
+
+                if (success) {
+                    this.copiedWhatsApp = true;
+                    if (typeof playTouchFeedback === 'function') playTouchFeedback();
+                    setTimeout(() => {
+                        this.copiedWhatsApp = false;
+                    }, 2500);
+                } else {
+                    // Fallback para navegadores que bloqueiam clipboard em HTTP não seguro na LAN:
+                    // Abre diretamente o WhatsApp com o texto pré-carregado
+                    const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(textToCopy)}`;
+                    window.open(whatsappUrl, '_blank');
+                    showToast('Abrindo WhatsApp com a lista consolidada formatada...', 'info', 4000);
+                }
+            } catch (err) {
+                console.error('Erro ao copiar lista para WhatsApp:', err);
+                showToast('Falha ao processar lista para WhatsApp.', 'error');
+            } finally {
+                this.isCopyingWhatsApp = false;
+            }
+        },
+
+        async loadCatalogProducts() {
+            try {
+                const res = await fetch('/api/admin/products/all');
+                if (res.ok) {
+                    this.catalogProducts = await res.json();
+                    const currentIds = new Set(this.catalogProducts.map(p => p.id));
+                    this.selectedProductIds = this.selectedProductIds.filter(id => currentIds.has(id));
+                }
+            } catch (err) {
+                console.error('Erro ao buscar produtos:', err);
+            }
+        },
+
+        async loadAdminCategories() {
+            try {
+                const res = await fetch(`/api/categories?setor=${this.adminCatFilterSector}`);
+                if (res.ok) {
+                    this.adminCategories = await res.json();
+                }
+            } catch (err) {
+                console.error('Erro ao carregar categorias no admin:', err);
+            }
+        },
+
+        get filteredDailyOrders() {
+            return this.dailyOrders.filter(o => {
+                const matchSec = this.filterSector === 'todos' || o.nome_setor.toLowerCase() === this.filterSector.toLowerCase();
+                const matchStat = this.filterStatus === 'todos' || o.status === this.filterStatus;
+                return matchSec && matchStat;
+            });
+        },
+
+        get filteredCatalogProducts() {
+            return this.catalogProducts.filter(p => {
+                let matchSec = false;
+                if (this.catalogFilterSector === 'todos') {
+                    matchSec = true;
+                } else {
+                    const filterLower = this.catalogFilterSector.toLowerCase();
+                    if (p.setores && Array.isArray(p.setores)) {
+                        matchSec = p.setores.some(s => s.toLowerCase() === filterLower);
+                    } else if (p.setor_responsavel) {
+                        matchSec = p.setor_responsavel.toLowerCase().includes(filterLower);
+                    }
+                }
+                const matchTerm = !this.catalogSearchTerm || 
+                    p.nome.toLowerCase().includes(this.catalogSearchTerm.toLowerCase()) || 
+                    (p.categoria && p.categoria.toLowerCase().includes(this.catalogSearchTerm.toLowerCase()));
+                return matchSec && matchTerm;
+            });
+        },
+
+        get isAllProductsSelected() {
+            const visible = this.filteredCatalogProducts;
+            if (!visible || visible.length === 0) return false;
+            return visible.every(p => this.selectedProductIds.includes(p.id));
+        },
+
+        toggleSelectAllProducts() {
+            const visible = this.filteredCatalogProducts;
+            if (this.isAllProductsSelected) {
+                const visibleIds = new Set(visible.map(p => p.id));
+                this.selectedProductIds = this.selectedProductIds.filter(id => !visibleIds.has(id));
+            } else {
+                const currentSet = new Set(this.selectedProductIds);
+                visible.forEach(p => currentSet.add(p.id));
+                this.selectedProductIds = Array.from(currentSet);
+            }
+        },
+
+        openBulkDeleteModal() {
+            if (this.selectedProductIds.length === 0) {
+                showToast('Nenhum produto selecionado.', 'warning');
+                return;
+            }
+            this.bulkDeleteModalOpen = true;
+            this.$nextTick(() => {
+                if (window.lucide) lucide.createIcons();
+            });
+        },
+
+        async confirmBulkDelete() {
+            if (this.selectedProductIds.length === 0) return;
+            this.isBatchDeleting = true;
+
+            try {
+                const res = await fetch('/api/admin/products/batch-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        product_ids: this.selectedProductIds
+                    })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    const count = data.count || this.selectedProductIds.length;
+                    showToast(`${count} produtos foram removidos com sucesso.`, 'success');
+                    this.selectedProductIds = [];
+                    this.bulkDeleteModalOpen = false;
+                    await this.loadCatalogProducts();
+                } else {
+                    showToast(data.detail || 'Erro ao excluir produtos em massa.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Erro de comunicação ao excluir produtos.', 'error');
+            } finally {
+                this.isBatchDeleting = false;
+            }
+        },
+
+        openEditProduct(prod) {
+            let secList = [];
+            if (prod.setores && Array.isArray(prod.setores) && prod.setores.length > 0) {
+                secList = [...prod.setores];
+            } else if (prod.setor_responsavel) {
+                secList = prod.setor_responsavel.split(',').map(s => s.trim()).filter(Boolean);
+            }
+            if (secList.length === 0) secList = ['Pizza'];
+
+            this.editingProduct = {
+                id: prod.id,
+                nome: prod.nome,
+                setores: secList,
+                unidade: prod.unidade_medida || 'un',
+                categoria: prod.categoria || 'Geral'
+            };
+            this.editModalOpen = true;
+            this.$nextTick(() => {
+                if (window.lucide) lucide.createIcons();
+            });
+        },
+
+        closeEditModal() {
+            this.editModalOpen = false;
+        },
+
+        async saveEditProduct() {
+            if (!this.editingProduct.nome.trim()) {
+                showToast('Informe o nome do insumo.', 'warning');
+                return;
+            }
+            if (!this.editingProduct.setores || this.editingProduct.setores.length === 0) {
+                showToast('Selecione pelo menos uma praça.', 'warning');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/products/${this.editingProduct.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nome: this.editingProduct.nome.trim(),
+                        setores: this.editingProduct.setores,
+                        unidade: this.editingProduct.unidade,
+                        categoria: this.editingProduct.categoria ? this.editingProduct.categoria.trim() : 'Geral'
+                    })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Insumo "${this.editingProduct.nome}" atualizado com sucesso!`, 'success');
+                    this.closeEditModal();
+                    await this.loadCatalogProducts();
+                } else {
+                    showToast(data.detail || 'Erro ao atualizar insumo.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Erro de conexão ao salvar insumo.', 'error');
+            }
+        },
+
+        async deleteProduct(prodId, prodNome) {
+            if (!confirm(`Deseja realmente excluir ou desativar o insumo "${prodNome}"?`)) return;
+
+            try {
+                const res = await fetch(`/api/products/${prodId}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(data.message || 'Insumo removido com sucesso.', 'info');
+                    this.selectedProductIds = this.selectedProductIds.filter(id => id !== prodId);
+                    await this.loadCatalogProducts();
+                } else {
+                    showToast(data.detail || 'Erro ao remover insumo.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Erro de conexão.', 'error');
+            }
+        },
+
+        async submitNewCategoryAdmin() {
+            const nome = this.newCategoryName.trim();
+            if (!nome) return;
+
+            try {
+                const res = await fetch('/api/categories', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nome: nome,
+                        setor: this.adminCatFilterSector
+                    })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Categoria "${nome}" criada para ${this.adminCatFilterSector}!`, 'success');
+                    this.newCategoryName = '';
+                    await this.loadAdminCategories();
+                } else {
+                    showToast(data.detail || 'Erro ao criar categoria.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Falha ao criar categoria.', 'error');
+            }
+        },
+
+        async deleteCategoryAdmin(catId, catNome) {
+            if (!confirm(`Excluir categoria "${catNome}"? Produtos associados passarão para a categoria "Geral".`)) return;
+
+            try {
+                const res = await fetch(`/api/categories/${catId}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Categoria "${catNome}" removida.`, 'info');
+                    await this.loadAdminCategories();
+                    await this.loadCatalogProducts();
+                } else {
+                    showToast(data.detail || 'Erro ao remover categoria.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Erro de conexão.', 'error');
+            }
+        },
+
+        async submitBatchProductsAdmin() {
+            const text = this.adminBatchForm.raw_text.trim();
+            if (!text) {
+                showToast('Cole ao menos um produto na lista ou carregue um arquivo.', 'warning');
+                return;
+            }
+
+            this.isBatchLoading = true;
+            try {
+                const res = await fetch('/api/products/batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.adminBatchForm)
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Sucesso! ${data.count} insumos foram adicionados à praça ${this.adminBatchForm.setor}!`, 'success', 4000);
+                    this.adminBatchForm.raw_text = '';
+                    this.adminCatalogTab = 'list';
+                    await this.loadCatalogProducts();
+                } else {
+                    showToast(data.detail || 'Erro ao cadastrar lote.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Erro de comunicação.', 'error');
+            } finally {
+                this.isBatchLoading = false;
+            }
+        },
+
+        async handleFileUploadAdmin(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('setor', this.adminBatchForm.setor);
+            formData.append('default_categoria', this.adminBatchForm.default_categoria || 'Geral');
+            formData.append('default_unidade', this.adminBatchForm.default_unidade || 'un');
+
+            this.isBatchLoading = true;
+            try {
+                const res = await fetch('/api/products/upload-file', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Sucesso! ${data.count} produtos importados do arquivo ${data.filename}!`, 'success', 4500);
+                    this.adminCatalogTab = 'list';
+                    await this.loadCatalogProducts();
+                } else {
+                    showToast(data.detail || 'Erro ao processar arquivo.', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Falha no envio do arquivo.', 'error');
+            } finally {
+                this.isBatchLoading = false;
+                event.target.value = '';
+            }
+        },
+
+        async enterAuditMode(sector) {
+            try {
+                const res = await fetch(`/api/audit/enter?sector=${encodeURIComponent(sector)}`);
+                if (res.ok) {
+                    window.location.href = '/operator';
+                } else {
+                    const data = await res.json();
+                    showToast(data.detail || 'Erro ao entrar no modo auditoria.', 'error');
+                }
+            } catch (err) {
+                console.error('Erro ao entrar em auditoria:', err);
+                showToast('Falha na comunicação com o servidor.', 'error');
+            }
+        },
+
+        async toggleProduct(prodId, currentActive) {
+            try {
+                const res = await fetch(`/api/admin/products/${prodId}/toggle`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ativo: !currentActive })
+                });
+                if (res.ok) {
+                    const p = this.catalogProducts.find(item => item.id === prodId);
+                    if (p) p.ativo = !currentActive ? 1 : 0;
+                    showToast('Status do produto atualizado!', 'info', 1500);
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        },
+
+        // --- MÉTODOS DA ABA 5: PEDIDOS CONCLUÍDOS ---
+
+        setCompletedPeriod(period) {
+            this.completedFilterPeriod = period;
+            const now = new Date();
+            const todayStr = now.toISOString().split('T')[0];
+
+            if (period === 'today') {
+                this.completedStartDate = todayStr;
+                this.completedEndDate = todayStr;
+            } else if (period === '7d') {
+                const d7 = new Date();
+                d7.setDate(d7.getDate() - 7);
+                this.completedStartDate = d7.toISOString().split('T')[0];
+                this.completedEndDate = todayStr;
+            } else if (period === '30d') {
+                const d30 = new Date();
+                d30.setDate(d30.getDate() - 30);
+                this.completedStartDate = d30.toISOString().split('T')[0];
+                this.completedEndDate = todayStr;
+            } else if (period === 'all') {
+                this.completedStartDate = '';
+                this.completedEndDate = '';
+            }
+            this.loadCompletedOrders();
+        },
+
+        async loadCompletedOrders() {
+            this.isLoadingCompleted = true;
+            try {
+                const params = new URLSearchParams();
+
+                if (this.completedFilterPeriod === 'today') {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    params.append('date', todayStr);
+                } else if (this.completedFilterPeriod === '7d' || this.completedFilterPeriod === '30d') {
+                    if (this.completedStartDate) params.append('start_date', this.completedStartDate);
+                    if (this.completedEndDate) params.append('end_date', this.completedEndDate);
+                } else if (this.completedFilterPeriod === 'custom') {
+                    if (this.completedStartDate) params.append('start_date', this.completedStartDate);
+                    if (this.completedEndDate) params.append('end_date', this.completedEndDate);
+                }
+
+                if (this.completedFilterSector && this.completedFilterSector !== 'todos') {
+                    params.append('setor', this.completedFilterSector);
+                }
+
+                const queryString = params.toString() ? ('?' + params.toString()) : '';
+                const res = await fetch(`/api/admin/orders/completed${queryString}`);
+                if (res.ok) {
+                    this.completedOrders = await res.json();
+                    this.$nextTick(() => {
+                        if (window.lucide) lucide.createIcons();
+                    });
+                }
+            } catch (err) {
+                console.error('Erro ao buscar pedidos concluídos:', err);
+            } finally {
+                this.isLoadingCompleted = false;
+            }
+        },
+
+        getCompletedPdfUrl() {
+            const params = new URLSearchParams();
+
+            if (this.completedFilterPeriod === 'today') {
+                const todayStr = new Date().toISOString().split('T')[0];
+                params.append('date', todayStr);
+            } else if (this.completedFilterPeriod === '7d' || this.completedFilterPeriod === '30d') {
+                if (this.completedStartDate) params.append('start_date', this.completedStartDate);
+                if (this.completedEndDate) params.append('end_date', this.completedEndDate);
+            } else if (this.completedFilterPeriod === 'custom') {
+                if (this.completedStartDate) params.append('start_date', this.completedStartDate);
+                if (this.completedEndDate) params.append('end_date', this.completedEndDate);
+            }
+
+            if (this.completedFilterSector && this.completedFilterSector !== 'todos') {
+                params.append('setor', this.completedFilterSector);
+            }
+
+            const queryString = params.toString() ? ('?' + params.toString()) : '';
+            return `/api/admin/orders/completed/pdf${queryString}`;
+        },
+
+        async reopenOrder(orderId, sectorName) {
+            try {
+                const res = await fetch(`/api/admin/orders/${orderId}/reopen`, {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    // Remove reativamente da lista de concluídos
+                    this.completedOrders = this.completedOrders.filter(o => o.id !== orderId);
+                    showToast(`Pedido da Praça ${sectorName || ''} reaberto com sucesso. Retornado para a Aba 1 e Aba 2.`, 'success', 3500);
+                    if (typeof playTouchFeedback === 'function') playTouchFeedback();
+                    // Atualiza Aba 1 e Aba 2 em tempo real
+                    await this.loadDailyOrders();
+                    await this.loadConsolidated();
+                } else {
+                    showToast(data.detail || 'Não foi possível reabrir o pedido.', 'error');
+                }
+            } catch (err) {
+                console.error('Erro ao reabrir pedido:', err);
+                showToast('Erro de comunicação ao reabrir o pedido.', 'error');
+            }
+        },
+
+        formatDateTimeBR(dtStr) {
+            if (!dtStr) return '';
+            try {
+                const d = new Date(dtStr.replace(' ', 'T'));
+                const dateBR = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                const timeBR = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                return `${dateBR} às ${timeBR}`;
+            } catch (e) {
+                return dtStr;
+            }
+        },
+
+        formatQty(qty) {
+            const n = Number(qty);
+            return Number.isInteger(n) ? n : n.toFixed(1);
+        },
+
+        formatTime(dtStr) {
+            if (!dtStr) return '';
+            try {
+                const d = new Date(dtStr.replace(' ', 'T'));
+                return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' (' + d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ')';
+            } catch (e) {
+                return dtStr;
+            }
+        },
+
+        formatDateBR(dateStr) {
+            if (!dateStr) return '';
+            const parts = dateStr.split('-');
+            return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateStr;
+        },
+
+        getSectorEmoji(sector) {
+            switch(sector) {
+                case 'Pizza': return '🍕';
+                case 'Cozinha': return '🍳';
+                case 'Bar': return '🍸';
+                case 'Salão':
+                case 'Sommelier': return '🍷';
+                default: return '📦';
+            }
+        }
+    };
+}
+</script>
+{% endblock %}
