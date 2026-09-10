@@ -29,9 +29,6 @@ RUN mkdir -p /app/data
 # Copia todos os arquivos da aplicação
 COPY . /app
 
-# Declara o volume de dados persistente (evita perda de banco de dados em redeploys)
-VOLUME ["/app/data"]
-
 # Expõe a porta padrão
 EXPOSE 8000
 
