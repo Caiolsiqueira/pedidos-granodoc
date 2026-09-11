@@ -8,8 +8,7 @@ FROM python:3.12-slim
 # Evita geração de arquivos .pyc e ativa buffer imediato de logs
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8000 \
-    GRANODOC_DB_PATH=/app/data/pedidos_granodoc.db
+    PORT=8000
 
 # Diretório padrão da aplicação
 WORKDIR /app
@@ -22,9 +21,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Instala dependências do Python primeiro para otimização de cache do Docker
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Cria diretório de persistência de dados para o SQLite
-RUN mkdir -p /app/data
 
 # Copia todos os arquivos da aplicação
 COPY . /app

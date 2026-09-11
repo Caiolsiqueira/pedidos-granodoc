@@ -1,38 +1,274 @@
 import os
 import sqlite3
 import hashlib
+import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB_PATH = os.path.join(DB_DIR, "pedidos_granodoc.db")
 
+def get_database_url() -> Optional[str]:
+    """Retorna a URL de conexão do PostgreSQL (Supabase / Render), se configurada."""
+    url = os.environ.get("DATABASE_URL")
+    if url and url.strip():
+        url = url.strip()
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        return url
+    return None
+
+def is_postgres() -> bool:
+    """Indica se a aplicação deve operar em PostgreSQL (Produção / Supabase) ou SQLite (Desenvolvimento)."""
+    return bool(get_database_url())
+
 def get_db_path() -> str:
     return os.environ.get("GRANODOC_DB_PATH", DEFAULT_DB_PATH)
 
-def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
-    path = db_path or get_db_path()
-    parent_dir = os.path.dirname(os.path.abspath(path))
-    if parent_dir:
-        os.makedirs(parent_dir, exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
+# =========================================================================
+# ADAPTADOR POSTGRESQL (SUPABASE)
+# =========================================================================
+
+_PG_POOL = None
+
+def get_pg_pool():
+    global _PG_POOL
+    if _PG_POOL is None or getattr(_PG_POOL, "closed", True):
+        import psycopg2.pool
+        db_url = get_database_url()
+        if "sslmode=" not in db_url and "localhost" not in db_url and "127.0.0.1" not in db_url:
+            separator = "&" if "?" in db_url else "?"
+            db_url = f"{db_url}{separator}sslmode=require"
+        _PG_POOL = psycopg2.pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=db_url)
+    return _PG_POOL
+
+class PostgresRowWrapper(dict):
+    """Encapsula resultados de queries PostgreSQL para compatibilidade uniforme com sqlite3.Row."""
+    def __init__(self, raw_dict):
+        converted = {}
+        for k, v in raw_dict.items():
+            if isinstance(v, datetime):
+                converted[k] = v.strftime("%Y-%m-%d %H:%M:%S")
+            elif hasattr(v, "isoformat") and not isinstance(v, str):
+                converted[k] = str(v)
+            else:
+                converted[k] = v
+        super().__init__(converted)
+
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            return list(self.values())[item]
+        return super().__getitem__(item)
+
+class PostgresCursorWrapper:
+    """Cursor adaptador que traduz dialeto SQLite (?, GROUP_CONCAT, strftime, INSERT OR IGNORE) para PostgreSQL."""
+    def __init__(self, raw_cursor):
+        self._cursor = raw_cursor
+        self.lastrowid = None
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+    def _translate_query(self, query: str) -> tuple[str, bool]:
+        if query.strip().upper().startswith("PRAGMA"):
+            return "-- PRAGMA ignored in Postgres\nSELECT 1", False
+
+        q = query
+
+        # 1. INSERT OR IGNORE INTO -> INSERT INTO ... ON CONFLICT DO NOTHING
+        if re.search(r'\bINSERT\s+OR\s+IGNORE\s+INTO\b', q, re.IGNORECASE):
+            q = re.sub(r'\bINSERT\s+OR\s+IGNORE\s+INTO\b', 'INSERT INTO', q, flags=re.IGNORECASE)
+            q = q.rstrip().rstrip(';') + " ON CONFLICT DO NOTHING;"
+
+        # 2. GROUP_CONCAT -> STRING_AGG
+        q = re.sub(
+            r'GROUP_CONCAT\s*\(\s*DISTINCT\s+([^)]+?)\)',
+            r"STRING_AGG(DISTINCT \1::text, ',')",
+            q,
+            flags=re.IGNORECASE
+        )
+        q = re.sub(
+            r'GROUP_CONCAT\s*\(\s*([^)]+?)\)',
+            r"STRING_AGG(\1::text, ',')",
+            q,
+            flags=re.IGNORECASE
+        )
+
+        # 3. strftime -> TO_CHAR
+        q = re.sub(
+            r"strftime\s*\(\s*'%Y-%m'\s*,\s*([^)]+?)\)",
+            r"TO_CHAR(\1, 'YYYY-MM')",
+            q,
+            flags=re.IGNORECASE
+        )
+        q = re.sub(
+            r"strftime\s*\(\s*'%Y-%m-%d'\s*,\s*([^)]+?)\)",
+            r"TO_CHAR(\1, 'YYYY-MM-DD')",
+            q,
+            flags=re.IGNORECASE
+        )
+
+        # 4. Comparações de DATE(col) = ? -> DATE(col)::text = %s
+        q = re.sub(r'DATE\s*\(([^)]+)\)\s*=\s*\?', r'DATE(\1)::text = %s', q, flags=re.IGNORECASE)
+
+        # 5. Parâmetros posicionais: ? -> %s
+        q = q.replace('?', '%s')
+
+        # 6. Auto RETURNING id em comandos INSERT para alimentar cur.lastrowid
+        should_fetch_id = False
+        is_insert = bool(re.search(r'^\s*INSERT\s+INTO\s+(\w+)', q, re.IGNORECASE))
+        has_returning = bool(re.search(r'\bRETURNING\b', q, re.IGNORECASE))
+        has_on_conflict = bool(re.search(r'\bON\s+CONFLICT\b', q, re.IGNORECASE))
+
+        if is_insert and not has_returning and not has_on_conflict:
+            match = re.search(r'^\s*INSERT\s+INTO\s+(\w+)', q, re.IGNORECASE)
+            tbl = match.group(1).lower() if match else ""
+            if tbl in ('usuarios', 'produtos', 'pedidos', 'itens_pedido', 'itens_avulsos', 'categorias'):
+                q = q.rstrip().rstrip(';') + " RETURNING id;"
+                should_fetch_id = True
+
+        return q, should_fetch_id
+
+    def execute(self, query, params=None):
+        translated_sql, should_fetch_id = self._translate_query(query)
+        if params is not None:
+            self._cursor.execute(translated_sql, params)
+        else:
+            self._cursor.execute(translated_sql)
+
+        if should_fetch_id:
+            try:
+                row = self._cursor.fetchone()
+                if row:
+                    self.lastrowid = row.get("id") if isinstance(row, dict) else row[0]
+            except Exception:
+                self.lastrowid = None
+        else:
+            self.lastrowid = None
+
+        return self
+
+    def executemany(self, query, seq_of_params):
+        translated_sql, _ = self._translate_query(query)
+        self._cursor.executemany(translated_sql, seq_of_params)
+        return self
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        if row is None:
+            return None
+        return PostgresRowWrapper(row)
+
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        return [PostgresRowWrapper(r) for r in rows]
+
+    def __iter__(self):
+        for r in self._cursor:
+            yield PostgresRowWrapper(r)
+
+    def close(self):
+        self._cursor.close()
+
+class PostgresConnectionWrapper:
+    """Wrapper para conexões PostgreSQL que fornece interface compatível com sqlite3.Connection."""
+    def __init__(self, raw_conn, pool=None):
+        self._conn = raw_conn
+        self._pool = pool
+        self.row_factory = None
+
+    def cursor(self):
+        from psycopg2.extras import RealDictCursor
+        raw_cur = self._conn.cursor(cursor_factory=RealDictCursor)
+        return PostgresCursorWrapper(raw_cur)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        if self._pool:
+            try:
+                self._pool.putconn(self._conn)
+            except Exception:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+        else:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            self.rollback()
+        else:
+            self.commit()
+        self.close()
+
+def get_connection(db_path: Optional[str] = None) -> Any:
+    """Retorna uma conexão ativa (PostgreSQL se DATABASE_URL existir, ou SQLite local)."""
+    if is_postgres():
+        pool = get_pg_pool()
+        raw_conn = None
+        try:
+            raw_conn = pool.getconn()
+            if raw_conn.closed:
+                raise Exception("Conexão com PostgreSQL fechada")
+            with raw_conn.cursor() as test_cur:
+                test_cur.execute("SELECT 1")
+        except Exception:
+            if raw_conn:
+                try:
+                    pool.putconn(raw_conn, close=True)
+                except Exception:
+                    pass
+            import psycopg2
+            db_url = get_database_url()
+            if "sslmode=" not in db_url and "localhost" not in db_url and "127.0.0.1" not in db_url:
+                separator = "&" if "?" in db_url else "?"
+                db_url = f"{db_url}{separator}sslmode=require"
+            raw_conn = psycopg2.connect(db_url)
+            return PostgresConnectionWrapper(raw_conn, pool=None)
+        return PostgresConnectionWrapper(raw_conn, pool=pool)
+    else:
+        path = db_path or get_db_path()
+        parent_dir = os.path.dirname(os.path.abspath(path))
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
+        return conn
 
 def hash_pin(pin: str, salt: str = "granodoc_salt_2026") -> str:
     """Hash SHA-256 with consistent salt."""
     return hashlib.sha256(f"{salt}_{pin}".encode("utf-8")).hexdigest()
 
 def init_db(db_path: Optional[str] = None) -> None:
-    """Initialize database tables and seed initial data if empty."""
+    """Initialize database tables and seed initial data if empty (PostgreSQL or SQLite)."""
+    if is_postgres():
+        print("[Database] Conectando ao PostgreSQL (Supabase). Inicializando schema e seeds...")
+    else:
+        print(f"[Database] Conectando ao SQLite local ({get_db_path()}). Inicializando schema e seeds...")
+
     conn = get_connection(db_path)
     cursor = conn.cursor()
 
+    id_type = "SERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
     # 1. Tabela de Usuários / Setores
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS usuarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {id_type},
         nome_setor TEXT UNIQUE NOT NULL,
         pin_hash TEXT NOT NULL,
         nivel_acesso TEXT NOT NULL CHECK(nivel_acesso IN ('operador', 'admin')),
@@ -42,9 +278,9 @@ def init_db(db_path: Optional[str] = None) -> None:
     """)
 
     # 2. Tabela de Produtos
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS produtos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {id_type},
         nome TEXT NOT NULL,
         setor_responsavel TEXT NOT NULL,
         unidade_medida TEXT NOT NULL,
@@ -54,9 +290,9 @@ def init_db(db_path: Optional[str] = None) -> None:
     """)
 
     # 3. Tabela de Pedidos
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS pedidos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {id_type},
         usuario_id INTEGER NOT NULL,
         data_hora TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         status TEXT NOT NULL DEFAULT 'Pendente' CHECK(status IN ('Rascunho', 'Pendente', 'Aprovado', 'Comprado')),
@@ -66,9 +302,9 @@ def init_db(db_path: Optional[str] = None) -> None:
     """)
 
     # 4. Tabela de Itens de Pedido (Catálogo)
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS itens_pedido (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {id_type},
         pedido_id INTEGER NOT NULL,
         produto_id INTEGER NOT NULL,
         quantidade_pedida REAL NOT NULL CHECK(quantidade_pedida > 0),
@@ -78,9 +314,9 @@ def init_db(db_path: Optional[str] = None) -> None:
     """)
 
     # 5. Tabela de Itens Avulsos (Fora de Catálogo)
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS itens_avulsos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {id_type},
         pedido_id INTEGER NOT NULL,
         descricao_item TEXT NOT NULL,
         quantidade REAL NOT NULL CHECK(quantidade > 0),
@@ -90,9 +326,9 @@ def init_db(db_path: Optional[str] = None) -> None:
     """)
 
     # 6. Tabela de Categorias
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS categorias (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {id_type},
         nome TEXT NOT NULL,
         setor TEXT NOT NULL,
         UNIQUE(nome, setor)
@@ -226,35 +462,36 @@ def init_db(db_path: Optional[str] = None) -> None:
     JOIN produto_setores ps ON ps.produto_id = p.id
     WHERE p.categoria IS NOT NULL AND TRIM(p.categoria) != '' AND TRIM(p.categoria) != 'Geral';
     """)
-    # --- MIGRAÇÃO: ADICIONAR STATUS 'Rascunho' À TABELA PEDIDOS ---
-    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='pedidos'")
-    pedidos_schema_row = cursor.fetchone()
-    if pedidos_schema_row and "Rascunho" not in pedidos_schema_row[0]:
-        cursor.execute("PRAGMA foreign_keys = OFF;")
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS pedidos_temp_draft_migration (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                usuario_id INTEGER NOT NULL,
-                data_hora TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                status TEXT NOT NULL DEFAULT 'Pendente' CHECK(status IN ('Rascunho', 'Pendente', 'Aprovado', 'Comprado')),
-                observacoes TEXT,
-                FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
-            );
-        """)
-        cursor.execute("""
-            INSERT INTO pedidos_temp_draft_migration (id, usuario_id, data_hora, status, observacoes)
-            SELECT id, usuario_id, data_hora, status, observacoes FROM pedidos;
-        """)
-        cursor.execute("DROP TABLE pedidos;")
-        cursor.execute("ALTER TABLE pedidos_temp_draft_migration RENAME TO pedidos;")
-        cursor.execute("PRAGMA foreign_keys = ON;")
-        conn.commit()
+    # --- MIGRAÇÃO: ADICIONAR STATUS 'Rascunho' À TABELA PEDIDOS (Apenas SQLite) ---
+    if not is_postgres():
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='pedidos'")
+        pedidos_schema_row = cursor.fetchone()
+        if pedidos_schema_row and "Rascunho" not in pedidos_schema_row[0]:
+            cursor.execute("PRAGMA foreign_keys = OFF;")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pedidos_temp_draft_migration (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario_id INTEGER NOT NULL,
+                    data_hora TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    status TEXT NOT NULL DEFAULT 'Pendente' CHECK(status IN ('Rascunho', 'Pendente', 'Aprovado', 'Comprado')),
+                    observacoes TEXT,
+                    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+                );
+            """)
+            cursor.execute("""
+                INSERT INTO pedidos_temp_draft_migration (id, usuario_id, data_hora, status, observacoes)
+                SELECT id, usuario_id, data_hora, status, observacoes FROM pedidos;
+            """)
+            cursor.execute("DROP TABLE pedidos;")
+            cursor.execute("ALTER TABLE pedidos_temp_draft_migration RENAME TO pedidos;")
+            cursor.execute("PRAGMA foreign_keys = ON;")
+            conn.commit()
 
     conn.close()
 
 # --- OPERAÇÕES DE USUÁRIOS E AUTENTICAÇÃO ---
 
-def get_user_by_id(user_id: int, conn: Optional[sqlite3.Connection] = None) -> Optional[Dict[str, Any]]:
+def get_user_by_id(user_id: int, conn: Optional[Any] = None) -> Optional[Dict[str, Any]]:
     should_close = False
     if conn is None:
         conn = get_connection()
@@ -268,7 +505,7 @@ def get_user_by_id(user_id: int, conn: Optional[sqlite3.Connection] = None) -> O
         if should_close:
             conn.close()
 
-def get_user_by_sector(nome_setor: str, conn: Optional[sqlite3.Connection] = None) -> Optional[Dict[str, Any]]:
+def get_user_by_sector(nome_setor: str, conn: Optional[Any] = None) -> Optional[Dict[str, Any]]:
     should_close = False
     if conn is None:
         conn = get_connection()
