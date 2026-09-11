@@ -8,15 +8,38 @@ from typing import List, Dict, Any, Optional
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB_PATH = os.path.join(DB_DIR, "pedidos_granodoc.db")
 
+def is_production() -> bool:
+    """Indica se a aplicação está executando em ambiente de produção hospedado (Render ou flag explícita)."""
+    return bool(
+        os.environ.get("RENDER")
+        or os.environ.get("RENDER_SERVICE_ID")
+        or os.environ.get("RENDER_INSTANCE_ID")
+        or os.environ.get("ENV", "").lower() == "production"
+        or os.environ.get("ENVIRONMENT", "").lower() == "production"
+    )
+
 def get_database_url() -> Optional[str]:
-    """Retorna a URL de conexão do PostgreSQL (Supabase / Render), se configurada."""
+    """Retorna a URL de conexão do PostgreSQL (Supabase / Render), convertendo para postgresql+psycopg2:// para compatibilidade com SQLAlchemy."""
     url = os.environ.get("DATABASE_URL")
     if url and url.strip():
         url = url.strip()
+        # Converte o esquema legado postgres:// para postgresql://
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
+        # Se começar com postgresql://, converte automaticamente para postgresql+psycopg2:// para evitar incompatibilidade com SQLAlchemy
+        if url.startswith("postgresql://") and not url.startswith("postgresql+psycopg2://"):
+            url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
         return url
     return None
+
+def get_raw_psycopg2_dsn(url: Optional[str] = None) -> str:
+    """Retorna a DSN nativa para o driver psycopg2 (postgresql:// com sslmode=require configurado)."""
+    raw_url = url or get_database_url() or ""
+    dsn = raw_url.replace("postgresql+psycopg2://", "postgresql://")
+    if dsn and "sslmode=" not in dsn and "localhost" not in dsn and "127.0.0.1" not in dsn:
+        separator = "&" if "?" in dsn else "?"
+        dsn = f"{dsn}{separator}sslmode=require"
+    return dsn
 
 def is_postgres() -> bool:
     """Indica se a aplicação deve operar em PostgreSQL (Produção / Supabase) ou SQLite (Desenvolvimento)."""
@@ -36,10 +59,10 @@ def get_pg_pool():
     if _PG_POOL is None or getattr(_PG_POOL, "closed", True):
         import psycopg2.pool
         db_url = get_database_url()
-        if "sslmode=" not in db_url and "localhost" not in db_url and "127.0.0.1" not in db_url:
-            separator = "&" if "?" in db_url else "?"
-            db_url = f"{db_url}{separator}sslmode=require"
-        _PG_POOL = psycopg2.pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=db_url)
+        if not db_url:
+            raise RuntimeError("Tentativa de inicializar pool de conexões PostgreSQL sem DATABASE_URL configurada.")
+        dsn = get_raw_psycopg2_dsn(db_url)
+        _PG_POOL = psycopg2.pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=dsn)
     return _PG_POOL
 
 class PostgresRowWrapper(dict):
@@ -70,7 +93,7 @@ class PostgresCursorWrapper:
     def rowcount(self):
         return self._cursor.rowcount
 
-    def _translate_query(self, query: str) -> tuple[str, bool]:
+    def _translate_query(self, query: str, is_executemany: bool = False) -> tuple[str, bool]:
         if query.strip().upper().startswith("PRAGMA"):
             return "-- PRAGMA ignored in Postgres\nSELECT 1", False
 
@@ -115,13 +138,13 @@ class PostgresCursorWrapper:
         # 5. Parâmetros posicionais: ? -> %s
         q = q.replace('?', '%s')
 
-        # 6. Auto RETURNING id em comandos INSERT para alimentar cur.lastrowid
+        # 6. Auto RETURNING id em comandos INSERT para alimentar cur.lastrowid (apenas execute simples)
         should_fetch_id = False
         is_insert = bool(re.search(r'^\s*INSERT\s+INTO\s+(\w+)', q, re.IGNORECASE))
         has_returning = bool(re.search(r'\bRETURNING\b', q, re.IGNORECASE))
         has_on_conflict = bool(re.search(r'\bON\s+CONFLICT\b', q, re.IGNORECASE))
 
-        if is_insert and not has_returning and not has_on_conflict:
+        if is_insert and not has_returning and not has_on_conflict and not is_executemany:
             match = re.search(r'^\s*INSERT\s+INTO\s+(\w+)', q, re.IGNORECASE)
             tbl = match.group(1).lower() if match else ""
             if tbl in ('usuarios', 'produtos', 'pedidos', 'itens_pedido', 'itens_avulsos', 'categorias'):
@@ -131,7 +154,7 @@ class PostgresCursorWrapper:
         return q, should_fetch_id
 
     def execute(self, query, params=None):
-        translated_sql, should_fetch_id = self._translate_query(query)
+        translated_sql, should_fetch_id = self._translate_query(query, is_executemany=False)
         if params is not None:
             self._cursor.execute(translated_sql, params)
         else:
@@ -150,7 +173,7 @@ class PostgresCursorWrapper:
         return self
 
     def executemany(self, query, seq_of_params):
-        translated_sql, _ = self._translate_query(query)
+        translated_sql, _ = self._translate_query(query, is_executemany=True)
         self._cursor.executemany(translated_sql, seq_of_params)
         return self
 
@@ -216,29 +239,49 @@ class PostgresConnectionWrapper:
 
 def get_connection(db_path: Optional[str] = None) -> Any:
     """Retorna uma conexão ativa (PostgreSQL se DATABASE_URL existir, ou SQLite local)."""
+    # 1. Se estiver em produção (Render) e não houver DATABASE_URL, bloqueia imediatamente
+    if is_production() and not get_database_url():
+        error_msg = (
+            "\n" + "=" * 75 + "\n"
+            "ERRO CRÍTICO DE PRODUÇÃO: DATABASE_URL NÃO CONFIGURADA NO RENDER!\n\n"
+            "A aplicação detectou o ambiente de produção (Render), mas a variável de ambiente\n"
+            "DATABASE_URL não foi informada nas configurações de Environment do Render.\n"
+            "O sistema foi intencionalmente bloqueado de iniciar em SQLite efêmero\n"
+            "para IMPEDIR PERDA DE DADOS quando o Render hibernar o container.\n\n"
+            "SOLUÇÃO: Acesse o Dashboard do Render -> Service -> Environment e adicione:\n"
+            "DATABASE_URL = postgresql://postgres.[ref]:[senha]@aws-0-sa-east-1.pooler.supabase.com:6543/postgres\n"
+            + "=" * 75 + "\n"
+        )
+        print(error_msg, flush=True)
+        raise RuntimeError(error_msg)
+
     if is_postgres():
-        pool = get_pg_pool()
-        raw_conn = None
+        raw_dsn = get_raw_psycopg2_dsn()
         try:
+            pool = get_pg_pool()
             raw_conn = pool.getconn()
             if raw_conn.closed:
-                raise Exception("Conexão com PostgreSQL fechada")
+                raise Exception("Conexão com PostgreSQL retornou fechada.")
             with raw_conn.cursor() as test_cur:
                 test_cur.execute("SELECT 1")
-        except Exception:
-            if raw_conn:
-                try:
-                    pool.putconn(raw_conn, close=True)
-                except Exception:
-                    pass
-            import psycopg2
-            db_url = get_database_url()
-            if "sslmode=" not in db_url and "localhost" not in db_url and "127.0.0.1" not in db_url:
-                separator = "&" if "?" in db_url else "?"
-                db_url = f"{db_url}{separator}sslmode=require"
-            raw_conn = psycopg2.connect(db_url)
-            return PostgresConnectionWrapper(raw_conn, pool=None)
-        return PostgresConnectionWrapper(raw_conn, pool=pool)
+            return PostgresConnectionWrapper(raw_conn, pool=pool)
+        except Exception as pool_err:
+            try:
+                import psycopg2
+                raw_conn = psycopg2.connect(raw_dsn)
+                return PostgresConnectionWrapper(raw_conn, pool=None)
+            except Exception as direct_err:
+                error_msg = (
+                    f"\n{'='*75}\n"
+                    f"ERRO CRÍTICO AO CONECTAR AO POSTGRESQL (SUPABASE):\n"
+                    f"Falha ao obter conexão do pool: {pool_err}\n"
+                    f"Falha na tentativa de conexão direta: {direct_err}\n"
+                    f"Verifique se o banco no Supabase está ativo (não pausado), se a senha na\n"
+                    f"DATABASE_URL está correta e se a porta do pooler (6543) ou direta (5432) está acessível.\n"
+                    f"{'='*75}\n"
+                )
+                print(error_msg, flush=True)
+                raise RuntimeError(error_msg) from direct_err
     else:
         path = db_path or get_db_path()
         parent_dir = os.path.dirname(os.path.abspath(path))
@@ -255,13 +298,23 @@ def hash_pin(pin: str, salt: str = "granodoc_salt_2026") -> str:
 
 def init_db(db_path: Optional[str] = None) -> None:
     """Initialize database tables and seed initial data if empty (PostgreSQL or SQLite)."""
-    if is_postgres():
-        print("[Database] Conectando ao PostgreSQL (Supabase). Inicializando schema e seeds...")
-    else:
-        print(f"[Database] Conectando ao SQLite local ({get_db_path()}). Inicializando schema e seeds...")
+    if is_production() and not get_database_url():
+        error_msg = (
+            "\n" + "=" * 75 + "\n"
+            "ERRO CRÍTICO DE PRODUÇÃO: DATABASE_URL NÃO CONFIGURADA NO RENDER!\n"
+            "Abortando inicialização para evitar gravação em SQLite efêmero.\n"
+            + "=" * 75 + "\n"
+        )
+        print(error_msg, flush=True)
+        raise RuntimeError(error_msg)
 
     conn = get_connection(db_path)
     cursor = conn.cursor()
+
+    if is_postgres():
+        print(">>> BANCO CONECTADO COM SUCESSO: SUPABASE POSTGRESQL", flush=True)
+    else:
+        print(f"[Database] Conectando ao SQLite local ({get_db_path()}). Inicializando schema e seeds...", flush=True)
 
     id_type = "SERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
 
